@@ -105,6 +105,106 @@ $ make nr-uesoftmodem rfsimulator nr_psbchsim nr_psschsim -j128
 $ sudo sysctl vm.mmap_rnd_bits=28
 ```
 
+#### 5.1.3 **Ubuntu 24.04 Build Support:**
+
+&emsp;**Build Requirements:**
+
+&emsp;&emsp;**1. ASN.1 Compiler Version:**
+&emsp;&emsp;&emsp;The codebase requires **ASN.1 compiler v0.9.29** (June 2024). Newer versions (v1.2+) generate incompatible pointer structures.
+
+&emsp;&emsp;&emsp;**Installation:**
+```
+$ cd /tmp
+$ git clone https://gitlab.eurecom.fr/oai/asn1c.git
+$ cd asn1c
+$ git checkout 998e7ea2
+$ autoreconf -iv
+$ ./configure --prefix=/opt/asn1c
+$ make -j$(nproc)
+$ sudo make install
+$ export PATH=/opt/asn1c/bin:$PATH
+```
+
+&emsp;&emsp;&emsp;**Verification:**
+```
+$ /opt/asn1c/bin/asn1c -version
+# Should output: ASN.1 Compiler, v0.9.29
+```
+
+&emsp;&emsp;**2. Ubuntu 24.04 Build System Modifications:**
+
+&emsp;&emsp;&emsp;**Option A: Apply patch (Recommended):**
+&emsp;&emsp;&emsp;From the repository root directory, apply the patch to modify `cmake_targets/tools/build_helper`:
+```bash
+# Navigate to repository root (if not already there)
+cd ~/openairinterface5g
+
+# Apply the Ubuntu 24.04 support patch
+git apply doc/episys/patches/ubuntu24.04-build-support.patch
+```
+&emsp;&emsp;&emsp;This patch adds ubuntu24.04 support and resolves the BLAS package conflict.
+
+&emsp;&emsp;&emsp;**Option B: Manual modifications to `cmake_targets/tools/build_helper`:**
+
+&emsp;&emsp;&emsp;**a) Add ubuntu24.04 to supported distributions (around line 106):**
+```bash
+check_supported_distribution() {
+    local distribution=$(get_distribution_release)
+    case "$distribution" in
+        "ubuntu24.04") return 0 ;;
+        "ubuntu23.10") return 0 ;;
+        # ... rest of cases
+```
+
+&emsp;&emsp;&emsp;**b) Add ubuntu24.04 to Python 3 packages (around line 553):**
+```bash
+"ubuntu20.04" | "ubuntu21.04" | "ubuntu22.04" | "ubuntu23.10" | "ubuntu24.04" | "debian11" )
+    optional_packages="python3 python3-pip python3-dev python3-scipy python3-matplotlib python3-pyroute2 universal-ctags"
+    ;;
+```
+
+&emsp;&emsp;&emsp;**c) Add ubuntu24.04 specific packages (around line 597):**
+```bash
+"ubuntu24.04")
+    specific_packages=""
+    ;;
+```
+
+&emsp;&emsp;&emsp;**d) Fix BLAS package conflict (around line 604):**
+```bash
+# For Ubuntu 24.04, skip libatlas-base-dev due to version conflict with liblapacke
+if [[ "$(get_distribution_release)" == "ubuntu24.04" ]]; then
+    BLAS_PACKAGES="libblas-dev liblapack-dev liblapacke-dev"
+else
+    BLAS_PACKAGES="libatlas-base-dev libblas-dev liblapack-dev liblapacke-dev"
+fi
+```
+
+&emsp;&emsp;&emsp;**e) Use BLAS_PACKAGES variable (around line 619):**
+```bash
+$SUDO apt-get install -y \
+    $specific_packages \
+    automake  \
+    # ... other packages ...
+    $BLAS_PACKAGES \
+    libreadline-dev \
+    # ... rest of packages
+```
+
+&emsp;&emsp;**3. Build with ASN.1 v0.9.29:**
+&emsp;&emsp;&emsp;Ensure the correct ASN.1 compiler is in your PATH before building:
+```
+$ export PATH=/opt/asn1c/bin:$PATH
+$ cd cmake_targets
+$ ./build_oai --nrUE --gNB -w SIMU
+```
+
+&emsp;&emsp;**Notes:**
+&emsp;&emsp;&emsp;• The Ubuntu 24.04 patch has been tested and verified to apply successfully
+&emsp;&emsp;&emsp;• Keep ASN.1 compiler at v0.9.29 until codebase is updated for v1.4+ compatibility
+&emsp;&emsp;&emsp;• Newer ASN.1 versions (v1.2.5, v1.3.2, v1.4) generate pointers instead of structs, requiring ~1500 code changes
+&emsp;&emsp;&emsp;• After applying the patch, the changes should be committed or stashed before building
+
 ### 5.2 **Running on RF Simulator:**
 
 &emsp; RFSim in OAI codebase is a radio frequency (RF) simulation module that enables end-to-end testing without physical RF hardware by simulating the wireless channel and signal propagation. It facilitates testing of 4G/5G network components entirely in software, making it ideal for CI/CD, development, and validation environments.

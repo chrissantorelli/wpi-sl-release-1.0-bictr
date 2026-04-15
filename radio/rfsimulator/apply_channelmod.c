@@ -60,6 +60,13 @@ void rxAddInput( const c16_t *input_sig,
                  uint64_t TS,
                  uint32_t CirSize
                ) {
+  static int bictr_logged = 0;
+  if (channelDesc->modelid == BICTR_LUNAR && !bictr_logged) {
+    LOG_I(HW, "[BICTR] rxAddInput() active with BICTR channel, nb_taps=%d channel_length=%d\n",
+          channelDesc->nb_taps, channelDesc->channel_length);
+    bictr_logged = 1;
+  }
+
   // channelDesc->path_loss_dB should contain the total path gain
   // so, in actual RF: tx gain + path loss + rx gain (+antenna gain, ...)
   // UE and NB gain control to be added

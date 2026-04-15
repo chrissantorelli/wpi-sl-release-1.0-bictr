@@ -218,6 +218,7 @@ typedef enum {
   EPA_low,
   EPA_medium,
   EPA_high,
+  BICTR_LUNAR,
 } SCM_t;
 #define CHANNELMOD_MAP_INIT \
   {"custom",custom},\
@@ -253,6 +254,7 @@ typedef enum {
   {"EPA_low",EPA_low},\
   {"EPA_medium",EPA_medium},\
   {"EPA_high",EPA_high},\
+  {"BICTR_LUNAR",BICTR_LUNAR},\
   {NULL, -1}
 
 #define CONFIG_HLP_SNR     "Set average SNR in dB (for --siml1 option)\n"
@@ -280,6 +282,23 @@ typedef enum {
 #define CHANNELMOD_MODEL_CO_PNAME "offset"
 #define CHANNELMOD_MODEL_DT_PNAME "ds_tdl"
 
+#define CHANNELMOD_MODEL_BICTR_TX_RX_DIST_PNAME     "bictr_tx_rx_dist"
+#define CHANNELMOD_MODEL_BICTR_TX_HEIGHT_PNAME       "bictr_tx_height"
+#define CHANNELMOD_MODEL_BICTR_RX_HEIGHT_PNAME       "bictr_rx_height"
+#define CHANNELMOD_MODEL_BICTR_REF_COUNT_PNAME       "bictr_ref_count"
+#define CHANNELMOD_MODEL_BICTR_RING_RADIUS_MIN_PNAME "bictr_ring_radius_min"
+#define CHANNELMOD_MODEL_BICTR_RING_RADIUS_MAX_PNAME "bictr_ring_radius_max"
+#define CHANNELMOD_MODEL_BICTR_RING_RADIUS_UNCERT_PNAME "bictr_ring_radius_uncert"
+#define CHANNELMOD_MODEL_BICTR_RING_COUNT_PNAME      "bictr_ring_count"
+#define CHANNELMOD_MODEL_BICTR_REF_ATTEMPT_PNAME     "bictr_ref_attempt_per_ring"
+#define CHANNELMOD_MODEL_BICTR_PERMIT_REAL_PNAME     "bictr_permit_real"
+#define CHANNELMOD_MODEL_BICTR_PERMIT_REAL_STD_PNAME "bictr_permit_real_std"
+#define CHANNELMOD_MODEL_BICTR_PERMIT_IMAG_PNAME     "bictr_permit_imag"
+#define CHANNELMOD_MODEL_BICTR_PERMIT_IMAG_STD_PNAME "bictr_permit_imag_std"
+#define CHANNELMOD_MODEL_BICTR_HORIZ_POL_PNAME       "bictr_horiz_pol"
+#define CHANNELMOD_MODEL_BICTR_FADING_PATHS_PNAME    "bictr_fading_paths"
+#define CHANNELMOD_MODEL_BICTR_DOPPLER_SPREAD_PNAME  "bictr_doppler_spread"
+
 // clang-format off
 #define CHANNELMOD_MODEL_PARAMS_DESC {  \
     {CHANNELMOD_MODEL_NAME_PNAME, "name of the model\n",               0,  .strptr=NULL ,            .defstrval="",                    TYPE_STRING,    0 }, \
@@ -289,6 +308,22 @@ typedef enum {
     {CHANNELMOD_MODEL_FF_PNAME,   "channel forget factor ((0 to 1)\n", 0,  .dblptr=NULL,             .defdblval=0,                     TYPE_DOUBLE,    0 }, \
     {CHANNELMOD_MODEL_CO_PNAME,   "channel offset in samps\n",         0,  .iptr=NULL,               .defintval=0,                     TYPE_INT,       0 }, \
     {CHANNELMOD_MODEL_DT_PNAME,   "delay spread for TDL models\n",     0,  .dblptr=NULL,             .defdblval=0,                     TYPE_DOUBLE,    0 }, \
+    {CHANNELMOD_MODEL_BICTR_TX_RX_DIST_PNAME,     "BICTR TX-RX distance in m\n",          0, .dblptr=NULL, .defdblval=500.0,  TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_TX_HEIGHT_PNAME,       "BICTR TX height in m\n",               0, .dblptr=NULL, .defdblval=10.0,   TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_RX_HEIGHT_PNAME,       "BICTR RX height in m\n",               0, .dblptr=NULL, .defdblval=2.0,    TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_REF_COUNT_PNAME,       "BICTR target reflector count\n",        0, .iptr=NULL,   .defintval=5,      TYPE_INT,    0}, \
+    {CHANNELMOD_MODEL_BICTR_RING_RADIUS_MIN_PNAME, "BICTR min ring radius in m\n",         0, .dblptr=NULL, .defdblval=5.0,    TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_RING_RADIUS_MAX_PNAME, "BICTR max ring radius in m\n",         0, .dblptr=NULL, .defdblval=300.0,  TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_RING_RADIUS_UNCERT_PNAME, "BICTR ring radius uncertainty m\n", 0, .dblptr=NULL, .defdblval=15.0,   TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_RING_COUNT_PNAME,      "BICTR number of rings\n",              0, .iptr=NULL,   .defintval=10,     TYPE_INT,    0}, \
+    {CHANNELMOD_MODEL_BICTR_REF_ATTEMPT_PNAME,     "BICTR attempts per ring\n",            0, .iptr=NULL,   .defintval=3,      TYPE_INT,    0}, \
+    {CHANNELMOD_MODEL_BICTR_PERMIT_REAL_PNAME,     "BICTR permittivity real mean\n",       0, .dblptr=NULL, .defdblval=6.848,  TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_PERMIT_REAL_STD_PNAME, "BICTR permittivity real std\n",        0, .dblptr=NULL, .defdblval=0.007,  TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_PERMIT_IMAG_PNAME,     "BICTR permittivity imag mean\n",       0, .dblptr=NULL, .defdblval=0.836,  TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_PERMIT_IMAG_STD_PNAME, "BICTR permittivity imag std\n",        0, .dblptr=NULL, .defdblval=0.001,  TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_HORIZ_POL_PNAME,       "BICTR horizontal polarization\n",      0, .iptr=NULL,   .defintval=0,      TYPE_INT,    0}, \
+    {CHANNELMOD_MODEL_BICTR_FADING_PATHS_PNAME,    "BICTR fading path count\n",            0, .iptr=NULL,   .defintval=1024,   TYPE_INT,    0}, \
+    {CHANNELMOD_MODEL_BICTR_DOPPLER_SPREAD_PNAME,  "BICTR Doppler spread m/s\n",           0, .dblptr=NULL, .defdblval=1.0,    TYPE_DOUBLE, 0}, \
 }
 // clang-format on
 

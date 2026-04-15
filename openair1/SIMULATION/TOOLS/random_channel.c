@@ -28,6 +28,7 @@
 
 #include "PHY/TOOLS/tools_defs.h"
 #include "sim.h"
+#include "bictr_channel.h"
 #include "scm_corrmat.h"
 #include "common/utils/LOG/log.h"
 #include "common/config/config_userapi.h"
@@ -1655,6 +1656,35 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
                         0);
       break;
 
+    case BICTR_LUNAR:
+      LOG_I(OCM, "[CHANNEL] BICTR_LUNAR selected — will be initialized by load_channellist\n");
+      chan_desc->nb_taps = 1;
+      chan_desc->channel_length = 1;
+      chan_desc->Td = 0;
+      chan_desc->ricean_factor = 1.0;
+      chan_desc->aoa = 0;
+      chan_desc->random_aoa = 0;
+      chan_desc->amps = calloc(1, sizeof(double));
+      chan_desc->amps[0] = 1.0;
+      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
+      chan_desc->delays = calloc(1, sizeof(double));
+      chan_desc->free_flags |= CHANMODEL_FREE_DELAY;
+      chan_desc->ch = calloc(nb_tx * nb_rx, sizeof(struct complexd *));
+      chan_desc->chF = calloc(nb_tx * nb_rx, sizeof(struct complexd *));
+      chan_desc->a = calloc(1, sizeof(struct complexd *));
+      chan_desc->a[0] = calloc(nb_tx * nb_rx, sizeof(struct complexd));
+      for (i = 0; i < nb_tx * nb_rx; i++) {
+        chan_desc->ch[i] = calloc(1, sizeof(struct complexd));
+        chan_desc->ch[i][0].r = 1.0;
+        chan_desc->chF[i] = calloc(275 * 12, sizeof(struct complexd));
+      }
+      chan_desc->R_sqrt = calloc(1, sizeof(struct complexd *));
+      chan_desc->R_sqrt[0] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
+      for (j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += (nb_tx * nb_rx + 1))
+        chan_desc->R_sqrt[0][j].r = 1.0;
+      chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_NTAPS;
+      break;
+
     default:
       LOG_W(OCM,"channel model not yet supported\n");
       free(chan_desc);
@@ -1761,6 +1791,13 @@ int random_channel(channel_desc_t *desc, uint8_t abstraction_flag) {
     desc->first_run = 0;
     return 0;
   }
+
+  if (desc->modelid == BICTR_LUNAR) {
+    stop_meas(&desc->random_channel);
+    desc->first_run = 0;
+    return 0;
+  }
+
   bzero(acorr,desc->nb_tx*desc->nb_rx*sizeof(struct complexd));
 
   for (i=0; i<(int)desc->nb_taps; i++) {
@@ -2331,6 +2368,45 @@ int load_channellist(uint8_t nb_tx, uint8_t nb_rx, double sampling_rate, double 
     channeldesc_p->model_name = strdup(*(channel_list.paramarray[i][pindex_NAME].strptr));
     LOG_I(OCM,"Model %s type %s allocated from config file, list %s\n",*(channel_list.paramarray[i][pindex_NAME].strptr),
           *(channel_list.paramarray[i][pindex_TYPE].strptr), modellist_name);
+
+    if (modid == BICTR_LUNAR) {
+      bictr_config_t bcfg;
+      int pi;
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_TX_RX_DIST_PNAME);
+      bcfg.tx_rx_dist = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_TX_HEIGHT_PNAME);
+      bcfg.tx_height = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_RX_HEIGHT_PNAME);
+      bcfg.rx_height = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_REF_COUNT_PNAME);
+      bcfg.ref_count = *(channel_list.paramarray[i][pi].iptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_RING_RADIUS_MIN_PNAME);
+      bcfg.ring_radius_min = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_RING_RADIUS_MAX_PNAME);
+      bcfg.ring_radius_max = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_RING_RADIUS_UNCERT_PNAME);
+      bcfg.ring_radius_uncert = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_RING_COUNT_PNAME);
+      bcfg.ring_count = *(channel_list.paramarray[i][pi].iptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_REF_ATTEMPT_PNAME);
+      bcfg.ref_attempt_per_ring = *(channel_list.paramarray[i][pi].iptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_PERMIT_REAL_PNAME);
+      bcfg.permit_real = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_PERMIT_REAL_STD_PNAME);
+      bcfg.permit_real_std = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_PERMIT_IMAG_PNAME);
+      bcfg.permit_imag = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_PERMIT_IMAG_STD_PNAME);
+      bcfg.permit_imag_std = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_HORIZ_POL_PNAME);
+      bcfg.horiz_pol = *(channel_list.paramarray[i][pi].iptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_FADING_PATHS_PNAME);
+      bcfg.fading_paths = *(channel_list.paramarray[i][pi].iptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_DOPPLER_SPREAD_PNAME);
+      bcfg.doppler_spread = *(channel_list.paramarray[i][pi].dblptr);
+
+      bictr_init_channel(channeldesc_p, &bcfg);
+    }
   } /* for loop on channel_list */
 
   return channel_list.numelt;

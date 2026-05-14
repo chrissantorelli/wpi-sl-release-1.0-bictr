@@ -22,3 +22,9 @@ tags
 nfapi_nr_interface_scf
 *.log
 *.out
+
+# BICTR / Monte Carlo generated outputs (do not push large CSVs and plots)
+bictr_analysis/montecarlo_results/
+bictr_analysis/results/
+bictr_analysis/merged_*/
+bictr_analysis/shards/

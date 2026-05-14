@@ -2405,6 +2405,27 @@ int load_channellist(uint8_t nb_tx, uint8_t nb_rx, double sampling_rate, double 
       pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_DOPPLER_SPREAD_PNAME);
       bcfg.doppler_spread = *(channel_list.paramarray[i][pi].dblptr);
 
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_DEM_FILE_PNAME);
+      {
+        const char *dem_str = *(channel_list.paramarray[i][pi].strptr);
+        if (dem_str && dem_str[0] != '\0') {
+          strncpy(bcfg.dem_file, dem_str, sizeof(bcfg.dem_file) - 1);
+          bcfg.dem_file[sizeof(bcfg.dem_file) - 1] = '\0';
+        } else {
+          bcfg.dem_file[0] = '\0';
+        }
+      }
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_TX_LON_PNAME);
+      bcfg.tx_lon = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_TX_LAT_PNAME);
+      bcfg.tx_lat = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_RX_LON_PNAME);
+      bcfg.rx_lon = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_RX_LAT_PNAME);
+      bcfg.rx_lat = *(channel_list.paramarray[i][pi].dblptr);
+      pi = config_paramidx_fromname(achannel_params, numparams, CHANNELMOD_MODEL_BICTR_BODY_RADIUS_PNAME);
+      bcfg.body_radius = *(channel_list.paramarray[i][pi].dblptr);
+
       bictr_init_channel(channeldesc_p, &bcfg);
     }
   } /* for loop on channel_list */

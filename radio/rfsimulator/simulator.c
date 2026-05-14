@@ -154,6 +154,7 @@ typedef struct {
 static void allocCirBuf(rfsimulator_state_t *bridge, int sock) {
   buffer_t *ptr=&bridge->buf[sock];
   AssertFatal ( (ptr->circularBuf=(sample_t *) malloc(sampleToByte(CirSize,1))) != NULL, "");
+  memset(ptr->circularBuf, 0, sampleToByte(CirSize, 1));
   ptr->circularBufEnd=((char *)ptr->circularBuf)+sampleToByte(CirSize,1);
   ptr->conn_sock=sock;
   ptr->lastReceivedTS=0;

@@ -471,7 +471,7 @@ target_link_libraries(shlib_loader PRIVATE CONFIG_LIB)
 
 add_boolean_option(ENABLE_LDPC_T1 OFF "Build support for LDPC Offload to T1 library" OFF)
 if (ENABLE_LDPC_T1)
-  pkg_check_modules(LIBDPDK_T1 REQUIRED libdpdk=20.05.0)
+  pkg_check_modules(LIBDPDK_T1 REQUIRED libdpdk>=20.05.0)
   find_library(T1 NAMES rte_pmd_hpac_sdfec_pmd REQUIRED)
   if (NOT T1)
     message(FATAL_ERROR "Library rte_pmd_hpac_sdfec_pmd for T1 offload not found")

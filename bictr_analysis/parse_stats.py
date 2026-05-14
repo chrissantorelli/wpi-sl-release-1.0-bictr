@@ -140,8 +140,8 @@ def compute_deltas(samples: list[StatsSample]) -> list[dict]:
         d_ul_r0 = curr.ul_rounds[0] - prev.ul_rounds[0]
         d_ul_err = curr.ul_errors - prev.ul_errors
 
-        dl_bler = d_dl_err / d_dl_r0 if d_dl_r0 > 0 else 0.0
-        ul_bler = d_ul_err / d_ul_r0 if d_ul_r0 > 0 else 0.0
+        dl_bler = min(d_dl_err / d_dl_r0, 1.0) if d_dl_r0 > 0 else 0.0
+        ul_bler = min(d_ul_err / d_ul_r0, 1.0) if d_ul_r0 > 0 else 0.0
 
         dl_retx_rate = ((curr.dl_rounds[1] - prev.dl_rounds[1]) / d_dl_r0) if d_dl_r0 > 0 else 0.0
 
@@ -168,8 +168,33 @@ def compute_deltas(samples: list[StatsSample]) -> list[dict]:
     return deltas
 
 
+def annotate_cumulative_tx(deltas: list[dict]) -> list[dict]:
+    """Add dl_tx_cum / ul_tx_cum (cumulative first-transmission counts at end of each interval)."""
+    cdl = 0
+    cul = 0
+    out = []
+    for d in deltas:
+        cdl += d['dl_first_tx']
+        cul += d['ul_first_tx']
+        row = dict(d)
+        row['dl_tx_cum'] = cdl
+        row['ul_tx_cum'] = cul
+        out.append(row)
+    return out
+
+
 def compute_summary(samples: list[StatsSample]) -> dict:
-    """Compute overall summary statistics from first to last sample."""
+    """Compute overall summary statistics from first to last sample.
+
+    DL/UL BLER here is ``(last_errors - first_errors) / (last_round0 - first_round0)`` using
+    gNB MAC cumulative counters. This matches summing per-interval ``errors`` / ``first_tx`` from
+    ``compute_deltas`` over the same window.
+
+    In OAI NR **phy-test / RFSim**, ``dlsch_errors`` frequently does not increase during a trial
+    even as ``dlsch_rounds[0]`` grows, so reported **DL BLER can sit at 0** while **UL** counters
+    usually do increase, giving a non-zero **UL BLER** that need not vary monotonically with the
+    ``-s`` SINR knob on the x-axis.
+    """
     if len(samples) < 2:
         return {}
 

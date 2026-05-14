@@ -45,6 +45,30 @@ def mcs_mod_label(order: int) -> str:
     return {2: 'QPSK', 4: '16QAM', 6: '64QAM'}.get(order, '?')
 
 
+def channel_uses_phytest_snr(channel: str) -> bool:
+    """AWGN rows from run_montecarlo.sh store phy-test SINR (dB) in noise_power_dB."""
+    return channel == 'AWGN' or channel.upper().startswith('AWGN')
+
+
+def x_display_db(channel: str, noise_power_db: int) -> float:
+    """X-axis dB for BLER curves: direct SINR for AWGN; legacy −noise for BICTR."""
+    if channel_uses_phytest_snr(channel):
+        return float(noise_power_db)
+    return float(-noise_power_db)
+
+
+def sweep_axis_label(channel: str) -> str:
+    if channel_uses_phytest_snr(channel):
+        return 'SINR (dB)'
+    return '−noise_power_dB  (dB, higher = better channel)'
+
+
+def sweep_table_col_label(channel: str) -> str:
+    if channel_uses_phytest_snr(channel):
+        return 'SINR (dB)'
+    return 'noise_power_dB'
+
+
 # Colors: use a distinct colormap that spreads well across 20 MCS curves
 def get_mcs_color(mcs: int, mcs_list: list[int]):
     n = len(mcs_list)
@@ -122,7 +146,7 @@ def plot_figure7(agg: dict, channel: str, direction: str,
 
     fig, ax = plt.subplots(figsize=(10, 6.5))
 
-    sinr_values = sorted([-n for n in noise_list])
+    sinr_values = sorted(x_display_db(channel, n) for n in noise_list)
     markers = ['o', 's', '^', 'v', 'D', 'P', 'X', '*', 'h', '<', '>', 'p',
                'd', '8', 'H', '+', 'x', '1', '2', '3']
 
@@ -138,9 +162,9 @@ def plot_figure7(agg: dict, channel: str, direction: str,
         for noise in sorted(noise_list):
             key = (channel, mcs, noise)
             if key in agg:
-                sinr_proxy = -noise
+                x_pt = x_display_db(channel, noise)
                 bler = min(agg[key][bler_key], 1.0)
-                x_vals.append(sinr_proxy)
+                x_vals.append(x_pt)
                 y_vals.append(bler)
 
         if x_vals:
@@ -148,7 +172,8 @@ def plot_figure7(agg: dict, channel: str, direction: str,
                     marker=marker, markersize=5, markeredgewidth=0.5,
                     markeredgecolor='white', label=f'MCS {mcs}', alpha=0.9)
 
-    chan_label = 'BICTR Lunar' if 'BICTR' in channel else channel
+    chan_label = 'BICTR Lunar' if 'BICTR' in channel else (
+        'AWGN (RFSim phy-test)' if channel_uses_phytest_snr(channel) else channel)
     if title:
         ax.set_title(title, fontsize=14, fontweight='bold', pad=12)
     else:
@@ -157,7 +182,7 @@ def plot_figure7(agg: dict, channel: str, direction: str,
             f'(RFSim, phy-test mode)',
             fontsize=13, fontweight='bold', pad=12)
 
-    ax.set_xlabel('−noise_power_dB  (dB, higher = better channel)', fontsize=12)
+    ax.set_xlabel(sweep_axis_label(channel), fontsize=12)
     ax.set_ylabel('Block Error Rate (BLER)', fontsize=12)
     ax.set_ylim(-0.02, 1.05)
     ax.set_yticks(np.arange(0, 1.1, 0.1))
@@ -211,7 +236,7 @@ def plot_summary_table(agg: dict, channel: str, direction: str,
 
     bler_key = 'dl_bler' if direction == 'DL' else 'ul_bler'
 
-    col_labels = ['noise_power_dB'] + [f'MCS {m}' for m in mcs_list]
+    col_labels = [sweep_table_col_label(channel)] + [f'MCS {m}' for m in mcs_list]
     table_data = []
     for noise in sorted(noise_list):
         row = [str(noise)]
@@ -248,7 +273,8 @@ def plot_summary_table(agg: dict, channel: str, direction: str,
                 pass
         cell.set_edgecolor('#cccccc')
 
-    chan_label = 'BICTR Lunar' if 'BICTR' in channel else channel
+    chan_label = 'BICTR Lunar' if 'BICTR' in channel else (
+        'AWGN (RFSim phy-test)' if channel_uses_phytest_snr(channel) else channel)
     ax.set_title(f'{direction} BLER Summary — {chan_label}',
                  fontsize=12, fontweight='bold', pad=20)
     fig.tight_layout()
@@ -267,7 +293,7 @@ def main():
     parser.add_argument('--output', '-o', default=None,
                         help='Output directory (default: same as CSV)')
     parser.add_argument('--channel', default=None,
-                        help='Channel type to plot (default: BICTR_LUNAR)')
+                        help='Channel type to plot (default: AWGN if present, else BICTR)')
     parser.add_argument('--direction', default='DL', choices=['DL', 'UL'],
                         help='Link direction (default: DL)')
     parser.add_argument('--title', default=None, help='Custom plot title')
@@ -282,24 +308,30 @@ def main():
 
     channels = sorted(set(r['channel_type'] for r in rows))
     mcs_list = sorted(set(r['mcs'] for r in rows))
-    noise_list = sorted(set(r['noise_power_dB'] for r in rows))
 
     target_channel = args.channel
     if target_channel is None:
         for c in channels:
-            if 'BICTR' in c:
+            if channel_uses_phytest_snr(c):
                 target_channel = c
                 break
         if target_channel is None:
+            for c in channels:
+                if 'BICTR' in c:
+                    target_channel = c
+                    break
+        if target_channel is None:
             target_channel = channels[0]
+
+    chan_rows = [r for r in rows if r['channel_type'] == target_channel]
+    noise_list = sorted(set(r['noise_power_dB'] for r in chan_rows))
 
     print(f"  Channels in data: {channels}")
     print(f"  Plotting channel: {target_channel}")
     print(f"  MCS values: {mcs_list}")
-    print(f"  Noise dB:   {noise_list}")
+    print(f"  Sweep dB (noise_power_dB column): {noise_list}")
     print(f"  Direction:  {args.direction}")
 
-    chan_rows = [r for r in rows if r['channel_type'] == target_channel]
     agg = aggregate(chan_rows)
     print(f"  {len(agg)} aggregated (MCS, noise) points")
 
@@ -318,16 +350,17 @@ def main():
 
     # Text summary
     bler_key = 'dl_bler' if args.direction == 'DL' else 'ul_bler'
-    chan_label = 'BICTR Lunar' if 'BICTR' in target_channel else target_channel
+    chan_label = 'BICTR Lunar' if 'BICTR' in target_channel else (
+        'AWGN (RFSim phy-test)' if channel_uses_phytest_snr(target_channel) else target_channel)
     print(f"\n{'='*60}")
     print(f"  {chan_label} — {args.direction} BLER Summary")
     print(f"{'='*60}")
-    header = f"{'noise_dB':>10}"
+    header = f"{sweep_table_col_label(target_channel):>12}"
     for mcs in mcs_list:
         header += f"  MCS{mcs:>3}"
     print(header)
     for noise in sorted(noise_list):
-        line = f"{noise:>10}"
+        line = f"{noise:>12}"
         for mcs in mcs_list:
             key = (target_channel, mcs, noise)
             if key in agg:
@@ -344,9 +377,11 @@ def main():
             if other_chan == target_channel:
                 continue
             other_rows = [r for r in rows if r['channel_type'] == other_chan]
+            other_noise_list = sorted(set(r['noise_power_dB'] for r in other_rows))
+            other_mcs_list = sorted(set(r['mcs'] for r in other_rows))
             other_agg = aggregate(other_rows)
             plot_figure7(other_agg, other_chan, args.direction,
-                         mcs_list, noise_list, None, output_dir)
+                         other_mcs_list, other_noise_list, None, output_dir)
             print(f"  Also plotted {other_chan} for comparison")
 
 

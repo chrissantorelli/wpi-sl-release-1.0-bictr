@@ -298,6 +298,12 @@ typedef enum {
 #define CHANNELMOD_MODEL_BICTR_HORIZ_POL_PNAME       "bictr_horiz_pol"
 #define CHANNELMOD_MODEL_BICTR_FADING_PATHS_PNAME    "bictr_fading_paths"
 #define CHANNELMOD_MODEL_BICTR_DOPPLER_SPREAD_PNAME  "bictr_doppler_spread"
+#define CHANNELMOD_MODEL_BICTR_DEM_FILE_PNAME        "bictr_dem_file"
+#define CHANNELMOD_MODEL_BICTR_TX_LON_PNAME          "bictr_tx_lon"
+#define CHANNELMOD_MODEL_BICTR_TX_LAT_PNAME          "bictr_tx_lat"
+#define CHANNELMOD_MODEL_BICTR_RX_LON_PNAME          "bictr_rx_lon"
+#define CHANNELMOD_MODEL_BICTR_RX_LAT_PNAME          "bictr_rx_lat"
+#define CHANNELMOD_MODEL_BICTR_BODY_RADIUS_PNAME     "bictr_body_radius"
 
 // clang-format off
 #define CHANNELMOD_MODEL_PARAMS_DESC {  \
@@ -324,6 +330,12 @@ typedef enum {
     {CHANNELMOD_MODEL_BICTR_HORIZ_POL_PNAME,       "BICTR horizontal polarization\n",      0, .iptr=NULL,   .defintval=0,      TYPE_INT,    0}, \
     {CHANNELMOD_MODEL_BICTR_FADING_PATHS_PNAME,    "BICTR fading path count\n",            0, .iptr=NULL,   .defintval=1024,   TYPE_INT,    0}, \
     {CHANNELMOD_MODEL_BICTR_DOPPLER_SPREAD_PNAME,  "BICTR Doppler spread m/s\n",           0, .dblptr=NULL, .defdblval=1.0,    TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_DEM_FILE_PNAME,       "BICTR DEM binary file path\n",         0, .strptr=NULL, .defstrval="",     TYPE_STRING, 0}, \
+    {CHANNELMOD_MODEL_BICTR_TX_LON_PNAME,          "BICTR TX longitude (deg)\n",           0, .dblptr=NULL, .defdblval=0.0,    TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_TX_LAT_PNAME,          "BICTR TX latitude (deg)\n",            0, .dblptr=NULL, .defdblval=-89.95, TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_RX_LON_PNAME,          "BICTR RX longitude (deg)\n",           0, .dblptr=NULL, .defdblval=0.0,    TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_RX_LAT_PNAME,          "BICTR RX latitude (deg)\n",            0, .dblptr=NULL, .defdblval=-89.93, TYPE_DOUBLE, 0}, \
+    {CHANNELMOD_MODEL_BICTR_BODY_RADIUS_PNAME,     "BICTR body radius in m\n",             0, .dblptr=NULL, .defdblval=1737400.0, TYPE_DOUBLE, 0}, \
 }
 // clang-format on
 

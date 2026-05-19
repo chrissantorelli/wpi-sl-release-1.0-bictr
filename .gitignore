@@ -32,3 +32,4 @@ bictr_analysis/shards/
 # BICTR terrain rasters (exceed GitHub file size limits; keep local copies only)
 bictr_terrain/*.JP2
 bictr_terrain/*.bdem
+bictr_terrain/.venv/

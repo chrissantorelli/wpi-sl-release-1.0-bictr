@@ -22,7 +22,8 @@ phy-test, use **`LAUNCH_MODE=cellular-do-ra`** (often needs core + traffic or co
 Cellular phy‑test Monte Carlo (default **BICTR_LUNAR**, RFSim) with CSV output and Figure‑style plots. **Copy‑paste run/plot/merge commands:**
 
 - **`README_montecarlo_100x100.md`** — **100 trials × 100 DL first‑TX** per cell (~22 k runs when using the default MCS×noise grid).  
-- **`README_montecarlo_1000x1000.md`** — **1000 × 1000** campaign (~220 k runs), shard + merge example, worker estimate.
+- **`README_montecarlo_1000x1000.md`** — **1000 × 1000** campaign (~220 k runs), shard + merge example, worker estimate.  
+- **`README.docker.md`** — build/run **`oai-montecarlo`** container (`docker-run-montecarlo.sh`).
 
 ## Quick Start
 

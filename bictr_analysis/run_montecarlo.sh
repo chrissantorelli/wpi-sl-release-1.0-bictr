@@ -127,12 +127,56 @@ echo "======================================================="
 echo ""
 
 cleanup_procs() {
-  kill "$UE_PID" 2>/dev/null || true
+  if [[ -n "${UE_PID:-}" ]]; then
+    kill "$UE_PID" 2>/dev/null || true
+    wait "$UE_PID" 2>/dev/null || true
+  fi
   sleep 1
-  kill "$GNB_PID" 2>/dev/null || true
-  wait "$UE_PID" 2>/dev/null || true
-  wait "$GNB_PID" 2>/dev/null || true
+  if [[ -n "${GNB_PID:-}" ]]; then
+    kill "$GNB_PID" 2>/dev/null || true
+    wait "$GNB_PID" 2>/dev/null || true
+  fi
   sleep 1
+}
+
+install_phytest_rrc_seeds() {
+  if [[ -f "$PHYTEST_RRC_SEED_DIR/reconfig.raw" && -f "$PHYTEST_RRC_SEED_DIR/rbconfig.raw" ]]; then
+    cp "$PHYTEST_RRC_SEED_DIR/reconfig.raw" "$PHYTEST_RRC_SEED_DIR/rbconfig.raw" "$BUILD_DIR/"
+    return 0
+  fi
+  return 1
+}
+
+PHYTEST_RRC_SEED_DIR="$SCRIPT_DIR/phytest_rrc"
+GNB_RRC_WAIT_SEC="${GNB_RRC_WAIT_SEC:-120}"
+
+# phy-test / noS1: gNB must write reconfig.raw + rbconfig.raw in BUILD_DIR before UE starts.
+wait_for_phytest_rrc_raw() {
+  local elapsed=0
+  while [[ $elapsed -lt $GNB_RRC_WAIT_SEC ]]; do
+    if [[ -f "$BUILD_DIR/reconfig.raw" && -f "$BUILD_DIR/rbconfig.raw" ]]; then
+      return 0
+    fi
+    if ! kill -0 "$GNB_PID" 2>/dev/null; then
+      if install_phytest_rrc_seeds; then
+        echo "    WARNING: gNB exited early; using phytest_rrc seeds (see gnb.log)" >&2
+        tail -n 15 "$TMPDIR/gnb.log" >&2 || true
+        return 0
+      fi
+      echo "    ERROR: gNB exited before writing reconfig.raw (see gnb.log)" >&2
+      tail -n 30 "$TMPDIR/gnb.log" >&2 || true
+      return 1
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  if install_phytest_rrc_seeds; then
+    echo "    WARNING: gNB did not write RRC raw files in ${GNB_RRC_WAIT_SEC}s; using phytest_rrc seeds" >&2
+    return 0
+  fi
+  echo "    ERROR: missing reconfig.raw/rbconfig.raw in $BUILD_DIR after ${GNB_RRC_WAIT_SEC}s" >&2
+  tail -n 30 "$TMPDIR/gnb.log" >&2 || true
+  return 1
 }
 
 extract_dl_first_tx() {
@@ -186,8 +230,12 @@ run_single_point() {
   fi
 
   rm -f "$BUILD_DIR/nrMAC_stats.log"
+  GNB_PID=""
+  UE_PID=""
 
   cd "$BUILD_DIR"
+  install_phytest_rrc_seeds || true
+
   if [[ "$CHAN" == "BICTR_LUNAR" ]]; then
     ./nr-softmodem \
       -O "$GNB_CONF" \
@@ -208,11 +256,16 @@ run_single_point() {
     GNB_PID=$!
   fi
 
-  sleep 5
+  if ! wait_for_phytest_rrc_raw; then
+    cleanup_procs
+    rm -rf "$TMPDIR"
+    return 1
+  fi
 
   if [[ "$CHAN" == "BICTR_LUNAR" ]]; then
     ./nr-uesoftmodem \
       -O "$UE_CONF" \
+      --rrc_config_path "$BUILD_DIR" \
       -r 106 --numerology 1 --band 78 -C 3619200000 \
       --rfsim --phy-test --noS1 \
       > "$TMPDIR/ue.log" 2>&1 &
@@ -220,6 +273,7 @@ run_single_point() {
   else
     ./nr-uesoftmodem \
       -O "$UE_CONF" \
+      --rrc_config_path "$BUILD_DIR" \
       -r 106 --numerology 1 --band 78 -C 3619200000 \
       --rfsim --phy-test --noS1 \
       -s "$SWEEP_DB" \

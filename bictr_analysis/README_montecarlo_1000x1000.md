@@ -103,5 +103,6 @@ Example: `t_avg = 90` s, safety **1.15**, 24 h → `ceil(220000 × 90 / (864
 ## Related
 
 - Lighter preset: **`README_montecarlo_100x100.md`**  
+- **Docker:** **`README.docker.md`** — `docker-run-montecarlo.sh`, export/import for remote hosts  
 - Merge helper: **`merge_montecarlo_csv.py`**  
 - Single‑MCS quick curve: **`run_montecarlo_single_mcs.sh`**

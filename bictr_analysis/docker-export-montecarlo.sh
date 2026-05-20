@@ -37,10 +37,13 @@ tar czf "$RUNTIME_TAR" -C "$REPO_ROOT" \
   bictr_analysis/docker-export-montecarlo.sh \
   bictr_analysis/run_montecarlo.sh \
   bictr_analysis/run_montecarlo_single_mcs.sh \
+  bictr_analysis/run_montecarlo_parallel_slmode1_lunar.sh \
+  bictr_analysis/montecarlo_parallel_progress.py \
   bictr_analysis/parse_montecarlo_point.py \
   bictr_analysis/plot_montecarlo.py \
   bictr_analysis/merge_montecarlo_csv.py \
   bictr_analysis/phytest_rrc \
+  bictr_analysis/snapshot.readme \
   bictr_analysis/README.docker.md \
   bictr_terrain/lunar_south_pole.bdem
 
@@ -53,4 +56,8 @@ echo "  mkdir -p ~/openairinterface5g && cd ~/openairinterface5g"
 echo "  gunzip -c $(basename "$IMG_TAR") | docker load"
 echo "  tar xzf $(basename "$RUNTIME_TAR")"
 echo "  sudo modprobe tun"
-echo "  cd bictr_analysis && ./docker-run-montecarlo.sh --mcs 16 --noise 0 --trials 1 --target-tx 50 --warmup 5 --duration 90"
+echo "  cd bictr_analysis"
+echo "  # single-worker smoke test:"
+echo "  ./docker-run-montecarlo.sh --mcs 16 --noise 0 --trials 1 --target-tx 50 --warmup 5 --duration 90"
+echo "  # full parallel 1000x1000 sweep across 4 workers:"
+echo "  ./docker-run-montecarlo.sh --parallel --workers 4 --trials 1000 --target-tx 1000 --warmup 15 --duration 600 --early-stop 3"

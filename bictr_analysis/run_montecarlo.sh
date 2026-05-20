@@ -34,7 +34,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OAI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$OAI_DIR/cmake_targets/ran_build/build"
+BUILD_DIR="${OAI_BUILD_DIR:-$OAI_DIR/cmake_targets/ran_build/build}"
 CONF_DIR="$OAI_DIR/targets/PROJECTS/GENERIC-NR-5GC/CONF"
 RESULTS_BASE="$SCRIPT_DIR/montecarlo_results"
 
@@ -73,8 +73,12 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RUN_DIR="$RESULTS_BASE/$TIMESTAMP"
+if [[ -n "${MC_RUN_DIR:-}" ]]; then
+  RUN_DIR="$MC_RUN_DIR"
+else
+  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+  RUN_DIR="$RESULTS_BASE/$TIMESTAMP"
+fi
 mkdir -p "$RUN_DIR"
 CSV="$RUN_DIR/montecarlo_results.csv"
 LOGFILE="$RUN_DIR/run.log"
@@ -221,6 +225,14 @@ run_single_point() {
     cp "$UE_AWGN_TMPL"   "$UE_CONF"
   fi
 
+  # When OAI_RFSIM_PORT is set (parallel runs), rewrite the templated
+  # rfsimulator.serverport in both confs so concurrent workers don't all try to
+  # bind the default 4043. CLI overrides are unreliable for the rfsimulator
+  # object block, so we edit the conf files directly.
+  if [[ -n "${OAI_RFSIM_PORT:-}" ]]; then
+    sed -i -E "s/(serverport[[:space:]]*=[[:space:]]*)\"?[0-9]+\"?/\1\"$OAI_RFSIM_PORT\"/g" "$GNB_CONF" "$UE_CONF"
+  fi
+
   if [[ "$CHAN" == "BICTR_LUNAR" ]]; then
     printf "[%d/%d] %-12s MCS=%-3d noise_power_dB=%-4s trial=%d ... " \
       "$RUN_NUM" "$TOTAL" "$CHAN" "$MCS" "$SWEEP_DB" "$TRIAL"
@@ -236,11 +248,22 @@ run_single_point() {
   cd "$BUILD_DIR"
   install_phytest_rrc_seeds || true
 
+  # gNB rfsim args: `--rfsimulator.[0].serveraddr server` creates a fresh
+  # array element [0] whose other fields default — wiping serverport from the
+  # conf. So we MUST also pass serverport here (nr-softmodem accepts the [0]
+  # form). nr-uesoftmodem does NOT, which is why the UE relies on the
+  # sed-rewritten conf only.
+  local GNB_RFSIM_PORT_ARGS=()
+  if [[ -n "${OAI_RFSIM_PORT:-}" ]]; then
+    GNB_RFSIM_PORT_ARGS=("--rfsimulator.[0].serverport" "$OAI_RFSIM_PORT")
+  fi
+
   if [[ "$CHAN" == "BICTR_LUNAR" ]]; then
     ./nr-softmodem \
       -O "$GNB_CONF" \
       --rfsim --phy-test --noS1 \
       "--rfsimulator.[0].serveraddr" "server" \
+      "${GNB_RFSIM_PORT_ARGS[@]}" \
       --gNBs.[0].min_rxtxtime 6 \
       --MCS "$MCS" \
       > "$TMPDIR/gnb.log" 2>&1 &
@@ -250,6 +273,7 @@ run_single_point() {
       -O "$GNB_CONF" \
       --rfsim --phy-test --noS1 \
       "--rfsimulator.[0].serveraddr" "server" \
+      "${GNB_RFSIM_PORT_ARGS[@]}" \
       --gNBs.[0].min_rxtxtime 6 \
       -m "$MCS" -t "$MCS" -s "$SWEEP_DB" \
       > "$TMPDIR/gnb.log" 2>&1 &

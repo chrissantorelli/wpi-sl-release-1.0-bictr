@@ -17,6 +17,8 @@ Produces `montecarlo_results.csv` and BLER vs SINR waterfall plots (`mc_*_bler_f
 | `bictr_analysis/run_montecarlo.sh` | Sweep driver — parses CLI flags, runs OAI, appends CSV rows |
 | `bictr_analysis/parse_montecarlo_point.py` | Per-trial delta BLER from `nrMAC_stats.log` snapshots |
 | `bictr_analysis/plot_montecarlo.py` | BLER waterfall curves + summary tables from CSV |
+| `bictr_analysis/run_montecarlo_rsl.sh` | Resilient sweep (`montecarlo_results_rsl/*_rsl/`, per-trial retries) |
+| `bictr_analysis/verify_phytest_mcs.sh` | Standalone check that OAI `-m`/`-t` change reported MCS |
 | `bictr_analysis/phytest_rrc/` | `reconfig.raw`, `rbconfig.raw` seeds for phy-test UE |
 | `targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.bictr.conf` | gNB template (BICTR channelmod) |
 | `targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.bictr.conf` | UE template (BICTR channelmod) |
@@ -169,6 +171,44 @@ Set by `run_montecarlo.sh` when launching processes — **not** the same as shel
 | `--rrc_config_path` | UE only | Directory with `reconfig.raw` / `rbconfig.raw` | `BUILD_DIR` after gNB writes or seeds RRC files. |
 
 **Common mistake:** `--MCS` on `nr-softmodem` is **ignored**; only **`-m` / `-t`** apply.
+
+---
+
+## Verify MCS changes (independent of sweep scripts)
+
+The CSV column `mcs` records what the **shell** requested. To confirm OAI **actually scheduled** that MCS (not just relabeling curves), use `verify_phytest_mcs.sh` — it does **not** call `run_montecarlo.sh`.
+
+```bash
+cd openairinterface5g/bictr_analysis
+sudo ./verify_phytest_mcs.sh        # default: compare MCS 9 vs 20
+sudo ./verify_phytest_mcs.sh 9 20   # explicit pair
+```
+
+For each probe the script:
+
+1. Starts gNB + UE with BICTR conf and `-m`/`-t` set to the probe MCS
+2. Waits `MEAS_SEC` (default 25 s), then reads `cmake_targets/ran_build/build/nrMAC_stats.log`
+3. Parses DL/UL lines: `... BLER ... MCS <N>` (written from `sched_ctrl->dl_bler_stats.mcs` in phy-test)
+4. Compares DL `dlsch_total_bytes` delta (higher MCS should move more bytes when the link is active)
+
+**PASS:** stats report MCS 9 and MCS 20 when requested; **FAIL** if stats MCS does not match `-m`.
+
+Manual spot-check during any run:
+
+```bash
+grep "MCS" cmake_targets/ran_build/build/nrMAC_stats.log
+```
+
+**OAI chain (for reference):**
+
+```text
+run_montecarlo.sh --mcs N  →  nr-softmodem -m N -t N
+                         →  target_dl_mcs / target_ul_mcs
+                         →  gNB_scheduler_phytest.c: sched_pdsch->mcs = target_dl_mcs
+                         →  nrMAC_stats.log: "... BLER ... MCS N"
+```
+
+Different MCS values at the same `noise_power_dB` should also produce different BLER/HARQ in `montecarlo_results.csv`; that is indirect evidence only — the verifier reads OAI directly.
 
 ---
 

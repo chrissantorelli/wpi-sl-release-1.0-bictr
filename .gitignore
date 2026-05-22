@@ -44,3 +44,8 @@ scripts/
 # Local Monte Carlo Docker files
 /Dockerfile.montecarlo
 /scripts/
+
+# Remove these local folders from GitHub
+/bictr_analysis/
+/bictr_terrain/
+/charts/physims/

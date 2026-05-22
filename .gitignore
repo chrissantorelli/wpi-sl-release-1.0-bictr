@@ -43,6 +43,9 @@ bictr_analysis/montecarlo_results2/
 /Dockerfile.montecarlo
 /scripts/
 
-# Local-only (not the active bictr_analysis scripts/README)
+# Entire BICTR analysis tree is local-only (scripts, results, plots)
+/bictr_analysis/
+
+# Local-only
 /bictr_terrain/
 /charts/physims/

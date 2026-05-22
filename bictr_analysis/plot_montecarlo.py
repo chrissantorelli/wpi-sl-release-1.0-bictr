@@ -60,7 +60,8 @@ def x_display_db(channel: str, noise_power_db: int) -> float:
 def sweep_axis_label(channel: str) -> str:
     if channel_uses_phytest_snr(channel):
         return 'SINR (dB)'
-    return '−noise_power_dB  (dB, higher = better channel)'
+    # BICTR runs set noise_power_dB = −SINR; x_display_db() plots SINR = −noise_power_dB.
+    return 'SINR (dB)'
 
 
 def sweep_table_col_label(channel: str) -> str:
@@ -125,7 +126,8 @@ def aggregate(rows: list[dict]) -> dict:
 
 def plot_figure7(agg: dict, channel: str, direction: str,
                  mcs_list: list[int], noise_list: list[int],
-                 title: str | None, output_dir: Path):
+                 title: str | None, output_dir: Path,
+                 log_y: bool = False):
     """Produce a single-panel waterfall plot matching Ahmed et al. Figure 7."""
 
     bler_key = 'dl_bler' if direction == 'DL' else 'ul_bler'
@@ -174,7 +176,9 @@ def plot_figure7(agg: dict, channel: str, direction: str,
 
     chan_label = 'BICTR Lunar' if 'BICTR' in channel else (
         'AWGN (RFSim phy-test)' if channel_uses_phytest_snr(channel) else channel)
-    if title:
+    if title == '':
+        pass
+    elif title:
         ax.set_title(title, fontsize=14, fontweight='bold', pad=12)
     else:
         ax.set_title(
@@ -183,9 +187,13 @@ def plot_figure7(agg: dict, channel: str, direction: str,
             fontsize=13, fontweight='bold', pad=12)
 
     ax.set_xlabel(sweep_axis_label(channel), fontsize=12)
-    ax.set_ylabel('Block Error Rate (BLER)', fontsize=12)
-    ax.set_ylim(-0.02, 1.05)
-    ax.set_yticks(np.arange(0, 1.1, 0.1))
+    ax.set_ylabel('Average Block Error Rate', fontsize=12)
+    if log_y:
+        ax.set_yscale('log')
+        ax.set_ylim(1e-4, 1.2)
+    else:
+        ax.set_ylim(-0.02, 1.05)
+        ax.set_yticks(np.arange(0, 1.1, 0.1))
 
     if sinr_values:
         margin = (max(sinr_values) - min(sinr_values)) * 0.05 + 0.5
@@ -223,6 +231,8 @@ def plot_figure7(agg: dict, channel: str, direction: str,
 
     fig.tight_layout()
     prefix = f'mc_{direction.lower()}_bler_fig7'
+    if log_y:
+        prefix += '_log'
     fig.savefig(output_dir / f'{prefix}.png', bbox_inches='tight')
     fig.savefig(output_dir / f'{prefix}.pdf', bbox_inches='tight')
     print(f"  Saved {prefix}.png/pdf")
@@ -297,6 +307,8 @@ def main():
     parser.add_argument('--direction', default='DL', choices=['DL', 'UL'],
                         help='Link direction (default: DL)')
     parser.add_argument('--title', default=None, help='Custom plot title')
+    parser.add_argument('--log', action='store_true',
+                        help='Use log y-axis (useful for low-BLER post-waterfall curves)')
     args = parser.parse_args()
 
     csv_path = Path(args.csv_path)

@@ -22,7 +22,7 @@
 # Options:
 #   --mcs      Comma-separated MCS values           (default: 9-28)
 #   --noise    Comma-separated channelmod noise_power_dB — BICTR_LUNAR (default list below)
-#   --snr      Comma-separated phy-test SINR (dB)   — only with --channels AWGN
+#   --snr      SINR (dB): AWGN phy-test -s; BICTR sets noise_power_dB = −SINR (Figure 7 style)
 #   --channels Channel types (default: BICTR_LUNAR). Use AWGN only if you intend phy-test AWGN.
 #   --trials   Number of trials per point           (default: 100)
 #   --target-tx Stop trial after this many DL first-TX packets (default: 100)
@@ -49,18 +49,22 @@ TARGET_TX=100
 RUN_DURATION=120
 WARMUP=12
 EARLY_STOP=0
+USER_SET_SNR=0
+USER_SET_NOISE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mcs)      IFS=',' read -ra MCS_VALUES <<< "$2"; shift 2 ;;
-    --snr)      IFS=',' read -ra SNR_DB_VALUES <<< "$2"; shift 2 ;;
-    --noise)    IFS=',' read -ra NOISE_DB_VALUES <<< "$2"; shift 2 ;;
+    --snr)      IFS=',' read -ra SNR_DB_VALUES <<< "$2"; USER_SET_SNR=1; shift 2 ;;
+    --noise)    IFS=',' read -ra NOISE_DB_VALUES <<< "$2"; USER_SET_NOISE=1; shift 2 ;;
     --channels) IFS=',' read -ra CHANNEL_TYPES <<< "$2"; shift 2 ;;
     --trials)   NUM_TRIALS="$2"; shift 2 ;;
     --target-tx) TARGET_TX="$2"; shift 2 ;;
     --duration) RUN_DURATION="$2"; shift 2 ;;
     --warmup)   WARMUP="$2"; shift 2 ;;
     --early-stop) EARLY_STOP="$2"; shift 2 ;;
+    --stall-timeout) STALL_TIMEOUT="$2"; export STALL_TIMEOUT; shift 2 ;;
+    --no-plot) NO_PLOT=1; shift ;;
     -h|--help)
       sed -n '1,31p' "$0" | grep '^#' | sed 's/^# \?//'
       exit 0 ;;
@@ -73,6 +77,29 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# BICTR channelmod is swept via noise_power_dB in OAI; for Figure-7-style axes use
+# --snr and we set noise_power_dB = −SINR in gNB/UE conf copies (plot uses −noise_power_dB).
+for _c in "${CHANNEL_TYPES[@]}"; do
+  if [[ "$_c" == "BICTR_LUNAR" ]]; then
+    if [[ "$USER_SET_SNR" -eq 1 && "$USER_SET_NOISE" -eq 1 ]]; then
+      echo "ERROR: use either --snr or --noise for BICTR_LUNAR, not both." >&2
+      exit 1
+    fi
+    if [[ "$USER_SET_SNR" -eq 1 ]]; then
+      _mapped=()
+      for _s in "${SNR_DB_VALUES[@]}"; do
+        _mapped+=("$((-_s))")
+      done
+      NOISE_DB_VALUES=("${_mapped[@]}")
+    fi
+  fi
+done
+
+BICTR_SWEEP_BY_SINR=0
+for _c in "${CHANNEL_TYPES[@]}"; do
+  [[ "$_c" == "BICTR_LUNAR" && "$USER_SET_SNR" -eq 1 ]] && BICTR_SWEEP_BY_SINR=1
+done
+
 if [[ -n "${MC_RUN_DIR:-}" ]]; then
   RUN_DIR="$MC_RUN_DIR"
 else
@@ -80,10 +107,26 @@ else
   RUN_DIR="$RESULTS_BASE/$TIMESTAMP"
 fi
 mkdir -p "$RUN_DIR"
+# Resolve to absolute path BEFORE the trial loop does `cd "$BUILD_DIR"`, otherwise
+# relative MC_RUN_DIR values silently break CSV writes (data lost).
+RUN_DIR="$(cd "$RUN_DIR" && pwd -P)"
 CSV="$RUN_DIR/montecarlo_results.csv"
 LOGFILE="$RUN_DIR/run.log"
 
-echo "channel_type,mcs,noise_power_dB,trial,dl_first_tx,dl_errors,dl_bler,dl_harq,ul_first_tx,ul_errors,ul_bler" > "$CSV"
+CSV_HEADER="channel_type,mcs,noise_power_dB,trial,dl_first_tx,dl_errors,dl_bler,dl_harq,ul_first_tx,ul_errors,ul_bler"
+
+declare -A COMPLETED_TRIALS=()
+if [[ -s "$CSV" ]] && head -1 "$CSV" | grep -q "^channel_type,mcs,noise_power_dB,trial,"; then
+  echo "Resuming run: existing CSV found at $CSV"
+  while IFS=',' read -r _CH _MC _ND _TR _REST; do
+    [[ "$_CH" == "channel_type" ]] && continue
+    [[ -z "$_CH" ]] && continue
+    COMPLETED_TRIALS["${_CH}|${_MC}|${_ND}|${_TR}"]=1
+  done < "$CSV"
+  echo "  ${#COMPLETED_TRIALS[@]} trial rows already present; those will be skipped"
+else
+  echo "$CSV_HEADER" > "$CSV"
+fi
 
 GNB_BICTR_TMPL="$CONF_DIR/gnb.sa.band78.fr1.106PRB.usrpb210.bictr.conf"
 GNB_AWGN_TMPL="$CONF_DIR/gnb.sa.band78.fr1.106PRB.usrpb210.awgn.conf"
@@ -111,7 +154,11 @@ echo "  Monte Carlo BLER Sweep"
 echo "  Channels:      ${CHANNEL_TYPES[*]}"
 echo "  MCS values:    ${MCS_VALUES[*]}"
 if [[ "$HAS_BICTR" -eq 1 ]]; then
-echo "  BICTR noise_power_dB: ${NOISE_DB_VALUES[*]}  (channelmod; CSV column noise_power_dB)"
+  if [[ "$BICTR_SWEEP_BY_SINR" -eq 1 ]]; then
+    echo "  BICTR SINR (dB):      ${SNR_DB_VALUES[*]}  (conf noise_power_dB = −SINR; CSV column noise_power_dB)"
+  else
+    echo "  BICTR noise_power_dB: ${NOISE_DB_VALUES[*]}  (channelmod; CSV column noise_power_dB)"
+  fi
 fi
 if [[ "$HAS_AWGN" -eq 1 ]]; then
 echo "  AWGN phy-test -s dB:    ${SNR_DB_VALUES[*]}  (stored in CSV as noise_power_dB)"
@@ -234,8 +281,13 @@ run_single_point() {
   fi
 
   if [[ "$CHAN" == "BICTR_LUNAR" ]]; then
-    printf "[%d/%d] %-12s MCS=%-3d noise_power_dB=%-4s trial=%d ... " \
-      "$RUN_NUM" "$TOTAL" "$CHAN" "$MCS" "$SWEEP_DB" "$TRIAL"
+    if [[ "$BICTR_SWEEP_BY_SINR" -eq 1 ]]; then
+      printf "[%d/%d] %-12s MCS=%-3d SINR=%-4s trial=%d ... " \
+        "$RUN_NUM" "$TOTAL" "$CHAN" "$MCS" "$((-SWEEP_DB))" "$TRIAL"
+    else
+      printf "[%d/%d] %-12s MCS=%-3d noise_power_dB=%-4s trial=%d ... " \
+        "$RUN_NUM" "$TOTAL" "$CHAN" "$MCS" "$SWEEP_DB" "$TRIAL"
+    fi
   else
     printf "[%d/%d] %-12s MCS=%-3d SINR=%-4s trial=%d ... " \
       "$RUN_NUM" "$TOTAL" "$CHAN" "$MCS" "$SWEEP_DB" "$TRIAL"
@@ -258,6 +310,11 @@ run_single_point() {
     GNB_RFSIM_PORT_ARGS=("--rfsimulator.[0].serverport" "$OAI_RFSIM_PORT")
   fi
 
+  # IMPORTANT: nr-softmodem phy-test takes `-m <dl_mcs> -t <ul_mcs>`. The earlier
+  # `--MCS $MCS` flag was silently ignored — all trials ran at the phy-test
+  # default MCS instead of the requested one, producing identical BLER curves
+  # across every MCS label. For BICTR (channelmod noise) we set -m/-t but NOT
+  # -s (channelmod handles noise via conf's noise_power_dB).
   if [[ "$CHAN" == "BICTR_LUNAR" ]]; then
     ./nr-softmodem \
       -O "$GNB_CONF" \
@@ -265,7 +322,7 @@ run_single_point() {
       "--rfsimulator.[0].serveraddr" "server" \
       "${GNB_RFSIM_PORT_ARGS[@]}" \
       --gNBs.[0].min_rxtxtime 6 \
-      --MCS "$MCS" \
+      -m "$MCS" -t "$MCS" \
       > "$TMPDIR/gnb.log" 2>&1 &
     GNB_PID=$!
   else
@@ -317,8 +374,12 @@ run_single_point() {
   local START_DL_TX=0
   START_DL_TX=$(extract_dl_first_tx "$TMPDIR/start_stats.txt")
 
+  local STALL_TIMEOUT_LOCAL="${STALL_TIMEOUT:-90}"
   local ELAPSED=0
   local TARGET_REACHED=0
+  local STALL_ELAPSED=0
+  local STALLED=0
+  local LAST_DL_TX=-1
   while [[ $ELAPSED -lt $RUN_DURATION ]]; do
     sleep 1
     ELAPSED=$((ELAPSED + 1))
@@ -334,9 +395,29 @@ run_single_point() {
         TARGET_REACHED=1
         break
       fi
+      # Stall = TX count unchanged across the timeout window. Catches both the
+      # 0-TX case (UE never came up) and the "stuck at N>0" case (gNB or UE
+      # died mid-trial after partial progress).
+      if [[ $DELTA_DL_TX -eq $LAST_DL_TX ]]; then
+        STALL_ELAPSED=$((STALL_ELAPSED + 1))
+        if [[ "$STALL_ELAPSED" -ge "$STALL_TIMEOUT_LOCAL" ]]; then
+          echo "    STALL: DL_first_tx stuck at ${DELTA_DL_TX} for ${STALL_TIMEOUT_LOCAL}s — aborting trial"
+          STALLED=1
+          break
+        fi
+      else
+        STALL_ELAPSED=0
+        LAST_DL_TX=$DELTA_DL_TX
+      fi
     else
+      STALL_ELAPSED=$((STALL_ELAPSED + 1))
       if (( ELAPSED % 10 == 0 )); then
         echo "    progress: ${ELAPSED}s, waiting for nrMAC_stats.log"
+      fi
+      if [[ "$STALL_ELAPSED" -ge "$STALL_TIMEOUT_LOCAL" ]]; then
+        echo "    STALL: nrMAC_stats.log never appeared in ${STALL_TIMEOUT_LOCAL}s — aborting trial"
+        STALLED=1
+        break
       fi
     fi
   done
@@ -353,6 +434,17 @@ run_single_point() {
   RESULT=$(python3 "$SCRIPT_DIR/parse_montecarlo_point.py" \
     "$TMPDIR/start_stats.txt" "$TMPDIR/end_stats.txt" 2>/dev/null) || RESULT="0,0,0.0,0/0/0/0,0,0,0.0"
 
+  # If trial stalled with zero DL TXs (e.g. UE crash at very low SINR),
+  # the link could not be established → record BLER=1.0 (saturation) rather
+  # than the parser's 0.0 placeholder, so the cliff appears correctly on plots.
+  if [[ "$STALLED" -eq 1 ]]; then
+    local _DLTX
+    _DLTX=$(echo "$RESULT" | cut -d',' -f1)
+    if [[ "${_DLTX:-0}" -eq 0 ]]; then
+      RESULT="${TARGET_TX},${TARGET_TX},1.000000,0/0/0/0,${TARGET_TX},${TARGET_TX},1.000000"
+    fi
+  fi
+
   echo "$CHAN,$MCS,$SWEEP_DB,$TRIAL,$RESULT" >> "$CSV"
 
   DL_BLER_VAL=$(echo "$RESULT" | cut -d',' -f3)
@@ -361,6 +453,8 @@ run_single_point() {
   MEAS_DL_TX=$(echo "$RESULT" | cut -d',' -f1)
   if [[ "$TARGET_REACHED" -eq 1 ]]; then
     echo "DL_BLER=$DL_BLER_VAL  UL_BLER=$UL_BLER_VAL  DL_first_tx=$MEAS_DL_TX (target reached in ${ELAPSED}s)"
+  elif [[ "$STALLED" -eq 1 ]]; then
+    echo "DL_BLER=$DL_BLER_VAL  UL_BLER=$UL_BLER_VAL  DL_first_tx=$MEAS_DL_TX (STALLED, aborted at ${ELAPSED}s)"
   else
     echo "DL_BLER=$DL_BLER_VAL  UL_BLER=$UL_BLER_VAL  DL_first_tx=$MEAS_DL_TX (timeout at ${ELAPSED}s before target)"
   fi
@@ -387,6 +481,14 @@ for CHAN in "${CHANNEL_TYPES[@]}"; do
       POINT_SKIP=0
 
       for ((TRIAL=1; TRIAL<=NUM_TRIALS; TRIAL++)); do
+        if [[ -n "${COMPLETED_TRIALS["${CHAN}|${MCS}|${SWEEP_DB}|${TRIAL}"]:-}" ]]; then
+          RUN_NUM=$((RUN_NUM + 1))
+          SKIPPED=$((SKIPPED + 1))
+          printf "[%d/%d] %-12s MCS=%-3d sweep=%-4s trial=%d ... SKIPPED (resume: already in CSV)\n" \
+            "$RUN_NUM" "$TOTAL" "$CHAN" "$MCS" "$SWEEP_DB" "$TRIAL"
+          continue
+        fi
+
         if [[ "$POINT_SKIP" -eq 1 ]]; then
           RUN_NUM=$((RUN_NUM + 1))
           SKIPPED=$((SKIPPED + 1))

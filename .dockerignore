@@ -5,3 +5,17 @@ common/utils/T/T_IDs.h
 common/utils/T/T_messages.txt.h
 common/utils/T/genids
 common/utils/T/genids.o
+
+.git
+cmake_targets/ran_build/build
+cmake_targets/ran_build/build-*
+cmake_targets/log
+cmake_targets/**/*.log
+openair2/UTIL/LOG/*.log
+montecarlo_results
+*.o
+*.a
+*.so
+*.tar
+*.tar.gz
+*.sif

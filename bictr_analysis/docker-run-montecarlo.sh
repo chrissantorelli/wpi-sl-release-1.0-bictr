@@ -41,6 +41,11 @@ if [[ "$BUILD" -eq 1 ]]; then
 fi
 
 mkdir -p "${SCRIPT_DIR}/montecarlo_results" "${SCRIPT_DIR}/phytest_rrc"
+# Image declares VOLUME on montecarlo_results/; bind it explicitly so logs/CSVs
+# land on the host (otherwise Docker uses an anonymous volume you cannot see).
+MC_RESULTS_MOUNT=(
+  -v "${SCRIPT_DIR}/montecarlo_results:/opt/openairinterface5g/bictr_analysis/montecarlo_results"
+)
 
 if [[ ${#ARGS[@]} -eq 0 ]]; then
   echo "ERROR: pass sweep options after --build / --parallel (if used)." >&2
@@ -90,5 +95,6 @@ docker run --rm -it \
   --device /dev/net/tun:/dev/net/tun \
   -v "${REPO_ROOT}/bictr_terrain:/opt/openairinterface5g/bictr_terrain:ro" \
   -v "${SCRIPT_DIR}:/opt/openairinterface5g/bictr_analysis" \
+  "${MC_RESULTS_MOUNT[@]}" \
   "${IMAGE}" \
   bash -lc "cd /opt/openairinterface5g/bictr_analysis && ${INNER_SCRIPT}${quoted_args}"

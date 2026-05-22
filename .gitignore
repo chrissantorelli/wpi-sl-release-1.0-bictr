@@ -38,3 +38,5 @@ bictr_terrain/*.JP2
 bictr_terrain/*.bdem
 bictr_terrain/.venv/
 bictr_analysis/montecarlo_results2/
+Dockerfile.montecarlo
+scripts/

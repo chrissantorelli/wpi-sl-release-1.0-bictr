@@ -24,6 +24,10 @@
 #   --quick            35 trials × 80 TX, 120s duration (smoke / timing test)
 #   --no-plot          skip plot_montecarlo.py after merge
 #   --keep-builds      do not delete per-worker build trees
+#   --shard-by mcs|noise
+#                      mcs (default): shard MCS 0–28 across workers (full waterfall).
+#                      noise: shard noise_power_dB across workers; requires --mcs
+#                      (one MCS curve in parallel — use before the full MCS×noise sweep).
 #
 set -euo pipefail
 
@@ -45,6 +49,8 @@ NOISE_LIST="6,4,2,0,-2,-4,-6,-8,-10,-14,-20"
 DO_PLOT=1
 KEEP_BUILDS=0
 QUICK=0
+SHARD_BY=mcs
+PARALLEL_MCS=""
 EXTRA_MC_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -55,6 +61,14 @@ while [[ $# -gt 0 ]]; do
     --warmup) WARMUP="$2"; shift 2 ;;
     --duration) RUN_DURATION="$2"; shift 2 ;;
     --noise) NOISE_LIST="$2"; shift 2 ;;
+    --shard-by) SHARD_BY="$2"; shift 2 ;;
+    --mcs)
+      if [[ "$SHARD_BY" == noise ]]; then
+        PARALLEL_MCS="$2"
+      else
+        EXTRA_MC_ARGS+=("$1" "$2")
+      fi
+      shift 2 ;;
     --quick) QUICK=1; shift ;;
     --no-plot) DO_PLOT=0; shift ;;
     --keep-builds) KEEP_BUILDS=1; shift ;;
@@ -120,21 +134,35 @@ if [[ -z "$WORKERS" ]]; then
   fi
 fi
 
-mapfile -t ALL_MCS < <(seq 0 28)
 IFS=',' read -ra NOISE_VALUES <<< "$NOISE_LIST"
-N_MCS=${#ALL_MCS[@]}
 N_NOISE=${#NOISE_VALUES[@]}
+
+if [[ "$SHARD_BY" == noise ]]; then
+  if [[ -z "$PARALLEL_MCS" ]]; then
+    echo "ERROR: --shard-by noise requires --mcs (e.g. --mcs 9)." >&2
+    exit 1
+  fi
+  IFS=',' read -ra ALL_MCS <<< "$PARALLEL_MCS"
+else
+  mapfile -t ALL_MCS < <(seq 0 28)
+fi
+N_MCS=${#ALL_MCS[@]}
 TOTAL_TRIALS=$((N_MCS * N_NOISE * NUM_TRIALS))
 
 mkdir -p "$RUN_ROOT"
 echo "======================================================="
 echo "  Parallel SL Mode 1 Monte Carlo (BICTR lunar channel)"
-echo "  MCS:              0–28 ($N_MCS values)"
+if [[ "$SHARD_BY" == noise ]]; then
+  echo "  Shard by:         noise_power_dB ($N_NOISE values across $WORKERS workers)"
+  echo "  MCS:              ${ALL_MCS[*]} ($N_MCS value(s))"
+else
+  echo "  Shard by:         MCS 0–28 ($N_MCS values across workers)"
+fi
 echo "  noise_power_dB:   ${NOISE_VALUES[*]}"
 echo "  Plot x-axis:      −noise_power_dB (higher = better)"
 echo "  Trials/cell:      $NUM_TRIALS"
 echo "  Target DL TX:     $TARGET_TX"
-echo "  Workers:          $WORKERS (all available CPUs)"
+echo "  Workers:          $WORKERS"
 echo "  Total trials:     $TOTAL_TRIALS"
 echo "  DEM:              $DEM_FILE"
 echo "  Run root:         $RUN_ROOT"
@@ -167,6 +195,18 @@ split_mcs_for_worker() {
   (IFS=,; echo "${chunk[*]}")
 }
 
+split_noise_for_worker() {
+  local id=$1
+  local start=$(( id * N_NOISE / WORKERS ))
+  local end=$(( (id + 1) * N_NOISE / WORKERS ))
+  local chunk=()
+  local i
+  for ((i=start; i<end; i++)); do
+    chunk+=("${NOISE_VALUES[i]}")
+  done
+  (IFS=,; echo "${chunk[*]}")
+}
+
 if command -v python3 >/dev/null 2>&1; then
   python3 "$SCRIPT_DIR/montecarlo_parallel_progress.py" \
     --run-root "$RUN_ROOT" \
@@ -180,10 +220,20 @@ fi
 
 PIDS=()
 for ((w=0; w<WORKERS; w++)); do
-  MCS_CHUNK=$(split_mcs_for_worker "$w")
-  if [[ -z "$MCS_CHUNK" ]]; then
-    touch "$RUN_ROOT/worker_${w}.done"
-    continue
+  if [[ "$SHARD_BY" == noise ]]; then
+    MCS_CHUNK="$PARALLEL_MCS"
+    NOISE_CHUNK=$(split_noise_for_worker "$w")
+    if [[ -z "$NOISE_CHUNK" ]]; then
+      touch "$RUN_ROOT/worker_${w}.done"
+      continue
+    fi
+  else
+    MCS_CHUNK=$(split_mcs_for_worker "$w")
+    NOISE_CHUNK="$NOISE_LIST"
+    if [[ -z "$MCS_CHUNK" ]]; then
+      touch "$RUN_ROOT/worker_${w}.done"
+      continue
+    fi
   fi
 
   WORKER_BUILD=$(prepare_worker_build "$w")
@@ -201,7 +251,11 @@ for ((w=0; w<WORKERS; w++)); do
   ip netns add "$WORKER_NETNS"
   ip netns exec "$WORKER_NETNS" ip link set lo up
 
-  echo "Worker $w: MCS {$MCS_CHUNK}  build=$WORKER_BUILD  rfsim_port=$WORKER_PORT  netns=$WORKER_NETNS"
+  if [[ "$SHARD_BY" == noise ]]; then
+    echo "Worker $w: MCS {$MCS_CHUNK}  noise {$NOISE_CHUNK}  build=$WORKER_BUILD  rfsim_port=$WORKER_PORT  netns=$WORKER_NETNS"
+  else
+    echo "Worker $w: MCS {$MCS_CHUNK}  build=$WORKER_BUILD  rfsim_port=$WORKER_PORT  netns=$WORKER_NETNS"
+  fi
 
   (
     trap 'touch "'"$RUN_ROOT"'/worker_'"$w"'.done"' EXIT
@@ -213,7 +267,7 @@ for ((w=0; w<WORKERS; w++)); do
     ip netns exec "$WORKER_NETNS" "$SCRIPT_DIR/run_montecarlo.sh" \
       --channels BICTR_LUNAR \
       --mcs "$MCS_CHUNK" \
-      --noise "$NOISE_LIST" \
+      --noise "$NOISE_CHUNK" \
       --trials "$NUM_TRIALS" \
       --target-tx "$TARGET_TX" \
       --warmup "$WARMUP" \

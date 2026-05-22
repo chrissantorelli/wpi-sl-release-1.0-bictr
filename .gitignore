@@ -40,3 +40,7 @@ bictr_terrain/.venv/
 bictr_analysis/montecarlo_results2/
 Dockerfile.montecarlo
 scripts/
+
+# Local Monte Carlo Docker files
+/Dockerfile.montecarlo
+/scripts/

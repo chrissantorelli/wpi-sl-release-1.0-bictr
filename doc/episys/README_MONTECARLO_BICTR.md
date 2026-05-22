@@ -1,7 +1,7 @@
 # BICTR Monte Carlo BLER sweeps (EpiSys / OAI)
 
 Cellular **phy-test** Monte Carlo over the **BICTR lunar** channel (`BICTR_LUNAR`) using OAI RFSim.
-Produces `montecarlo_results.csv` and Figure-7-style BLER vs SINR plots.
+Produces `montecarlo_results.csv` and BLER vs SINR waterfall plots (`mc_*_bler_fig.png/pdf`).
 
 > **Note:** This path is **Uu cellular** (`nr-softmodem` + `nr-uesoftmodem`, `--phy-test --noS1`).
 > It is **not** NR sidelink Mode 2 (`--sl-mode 2`). For sidelink, see `README_SL.md`.
@@ -16,7 +16,7 @@ Produces `montecarlo_results.csv` and Figure-7-style BLER vs SINR plots.
 |------|------|
 | `bictr_analysis/run_montecarlo.sh` | Sweep driver — parses CLI flags, runs OAI, appends CSV rows |
 | `bictr_analysis/parse_montecarlo_point.py` | Per-trial delta BLER from `nrMAC_stats.log` snapshots |
-| `bictr_analysis/plot_montecarlo.py` | Figure-7 curves + summary tables from CSV |
+| `bictr_analysis/plot_montecarlo.py` | BLER waterfall curves + summary tables from CSV |
 | `bictr_analysis/phytest_rrc/` | `reconfig.raw`, `rbconfig.raw` seeds for phy-test UE |
 | `targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.bictr.conf` | gNB template (BICTR channelmod) |
 | `targets/PROJECTS/GENERIC-NR-5GC/CONF/ue.bictr.conf` | UE template (BICTR channelmod) |
@@ -64,7 +64,7 @@ flowchart TB
   subgraph out ["Outputs"]
     PARSE["parse_montecarlo_point.py"]
     CSV["montecarlo_results.csv"]
-    PLOT["plot_montecarlo.py → mc_*_fig7.png/pdf"]
+    PLOT["plot_montecarlo.py → mc_*_bler_fig.png/pdf"]
   end
 
   MCS --> L1
@@ -194,7 +194,7 @@ Written to `montecarlo_results/<timestamp>/montecarlo_results.csv`:
 | Flag | Default | Definition | Flow connection |
 |------|---------|------------|-----------------|
 | `csv_path` | (required) | Path to `montecarlo_results.csv` | Input from `run_montecarlo.sh` output. |
-| `--output` / `-o` | CSV parent dir | Directory for `mc_dl_bler_fig7.png/pdf`, UL plots, tables | — |
+| `--output` / `-o` | CSV parent dir | Directory for `mc_dl_bler_fig.png/pdf`, `mc_ul_bler_fig.png/pdf`, tables | — |
 | `--channel` | auto (AWGN if present, else BICTR) | Which `channel_type` rows to plot | Filters CSV before aggregate/plot. |
 | `--direction` | `DL` | `DL` or `UL` for primary curve | Also generates the other direction. |
 | `--title` | auto | Custom figure title | — |

@@ -17,7 +17,8 @@ Produces `montecarlo_results.csv` and BLER vs SINR waterfall plots (`mc_*_bler_f
 | `bictr_analysis/run_montecarlo.sh` | Sweep driver — parses CLI flags, runs OAI, appends CSV rows |
 | `bictr_analysis/parse_montecarlo_point.py` | Per-trial delta BLER from `nrMAC_stats.log` snapshots |
 | `bictr_analysis/plot_montecarlo.py` | BLER waterfall curves + summary tables from CSV |
-| `bictr_analysis/run_montecarlo_rsl.sh` | Resilient sweep (`montecarlo_results_rsl/*_rsl/`, per-trial retries) |
+| `bictr_analysis/run_montecarlo_rsl.sh` | **Resilient** long-run driver — same BLER sweep as above, with retries, resume, and per-trial logs (`*_rsl/` output) |
+| `bictr_analysis/mc_trial_logs.sh` | Archives per-trial `gnb.log` / `bictr_verify.txt` under `trial_logs/` |
 | `bictr_analysis/verify_phytest_mcs.sh` | Standalone check that OAI `-m`/`-t` change reported MCS |
 | `bictr_analysis/phytest_rrc/` | `reconfig.raw`, `rbconfig.raw` seeds for phy-test UE |
 | `targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.fr1.106PRB.usrpb210.bictr.conf` | gNB template (BICTR channelmod) |
@@ -113,6 +114,118 @@ python3 plot_montecarlo.py "$LATEST" -o "$(dirname "$LATEST")"
 ```
 
 Results: `bictr_analysis/montecarlo_results/<timestamp>/` (gitignored).
+
+For long grids (MCS 9–28 × many noise points), use the **resilient** driver below instead of `run_montecarlo.sh` — see [What is the RSL script?](#what-is-the-rsl-script).
+
+---
+
+## What is the RSL script?
+
+**`run_montecarlo_rsl.sh`** is the **resilient** variant of the Monte Carlo BLER sweep. **RSL** here means *resilient* (output folders are named `<timestamp>_rsl` under `montecarlo_results_rsl/`). It is **not** a different channel model or metric: it runs the same phy-test OAI setup, the same BICTR lunar configs, and produces the same `montecarlo_results.csv` and plots as `run_montecarlo.sh`.
+
+Use it when a sweep is **long or fragile** — for example MCS 9–28 × 20 noise points × many trials. In those runs, individual trials can **stall** (no DL traffic), **time out** before `--target-tx`, or leave **stuck `nr-softmodem` processes** after a crash or Ctrl+C. The standard script stops or loses progress; the RSL script is built to keep the grid moving and let you **continue later**.
+
+| | `run_montecarlo.sh` | `run_montecarlo_rsl.sh` |
+|--|---------------------|-------------------------|
+| **Purpose** | Short or interactive sweeps | Overnight / multi-hour grids |
+| **On failure** | One attempt per cell; partial CSV row | Retries the same cell (default 3×), kills OAI between tries |
+| **After interrupt** | Resume only if you reuse the same output dir / `MC_RUN_DIR` | **`--resume-dir`** skips completed CSV rows and continues |
+| **Output dir** | `montecarlo_results/<timestamp>/` | `montecarlo_results_rsl/<timestamp>_rsl/` |
+| **Extra artifacts** | CSV (+ optional `run.log`) | CSV, `rsl_events.log`, `trial_logs/` (gNB logs for DEM verification), `bictr_terrain_index.tsv` |
+
+For a **quick** curve (e.g. two MCS values, one trial per point), either script works; for a **full BICTR assessment**, use RSL.
+
+---
+
+## Resilient sweeps (`run_montecarlo_rsl.sh`)
+
+Same measurement as the standard driver. Additional behavior:
+
+| Behavior | Detail |
+|----------|--------|
+| **Per-trial retries** | Up to `--max-retries` attempts (default **3**) on stall, timeout before `--target-tx`, or bring-up failure |
+| **Process cleanup** | `force_kill_oai` between attempts so hung `nr-softmodem` / UE do not block the next trial |
+| **Resume** | `--resume-dir` reuses an existing `montecarlo_results_rsl/<timestamp>_rsl/` folder; rows already in `montecarlo_results.csv` are **skipped** |
+| **Failed trials** | No CSV row until success or the final retry; re-run with `--resume-dir` to retry failed cells |
+| **Event log** | `rsl_events.log` in the run directory (stall / timeout / give-up lines) |
+| **Trial logs** | `trial_logs/<channel>_mcs<N>_np<dB>_t<T>/` with `gnb.log`, `ue.log`, conf copies, `bictr_verify.txt` (`[BICTR]` lines), `meta.txt` |
+| **Terrain index** | `bictr_terrain_index.tsv` — one row per archived trial (`dem_mode`: DEM / FLAT / FLAT_FALLBACK) |
+
+**Output:** `bictr_analysis/montecarlo_results_rsl/<timestamp>_rsl/montecarlo_results.csv` (gitignored).
+
+Trial logs are **on by default** (~hundreds of MB for a full 400-cell grid). Disable with `--no-save-trial-logs`. RSL retry attempts are archived only on the **final** attempt unless `--save-all-attempts`.
+
+### Start a resilient sweep
+
+```bash
+cd openairinterface5g/bictr_analysis
+
+sudo ./run_montecarlo_rsl.sh \
+  --noise 8,6,4,2,0,-2,-4,-6,-8,-10,-12,-14,-16,-18,-20,-22,-24,-26,-28,-30 \
+  --trials 1 \
+  --target-tx 100 \
+  2>&1 | tee "montecarlo_results_rsl/run_$(date +%Y%m%d_%H%M%S).log"
+```
+
+Default MCS range is **9–28** (omit `--mcs` for full grid). Plot when done:
+
+```bash
+python3 plot_montecarlo.py montecarlo_results_rsl/<timestamp>_rsl/montecarlo_results.csv \
+  -o montecarlo_results_rsl/<timestamp>_rsl
+```
+
+### Resume after interrupt (Ctrl+C, crash, reboot)
+
+1. Find the run folder: `ls -td montecarlo_results_rsl/*_rsl`
+2. Re-launch with **`--resume-dir`** and the **same** `--noise`, `--mcs`, `--trials`, and `--target-tx` as the original run (defaults differ if you omit them).
+
+```bash
+cd openairinterface5g/bictr_analysis
+
+# Optional: clear stray OAI from the interrupted session
+sudo pkill -9 nr-softmodem 2>/dev/null; sudo pkill -9 rfsimulator 2>/dev/null; true
+
+sudo ./run_montecarlo_rsl.sh \
+  --resume-dir montecarlo_results_rsl/20260521_222458_rsl \
+  --noise 8,6,4,2,0,-2,-4,-6,-8,-10,-12,-14,-16,-18,-20,-22,-24,-26,-28,-30 \
+  --trials 1 \
+  --target-tx 100
+```
+
+On startup you should see:
+
+```text
+Resuming run: existing CSV found at .../montecarlo_results.csv
+  N trial rows already present; those will be skipped
+```
+
+Then `SKIPPED (resume: already in CSV)` for completed `(channel, mcs, noise, trial)` cells before new work continues.
+
+**Resume rules**
+
+- `--resume-dir` may be a path relative to `bictr_analysis/` or absolute.
+- If the CSV exists with a valid header, **new rows append** to the same file; plots use the merged CSV.
+- Do **not** change `--noise` or `--mcs` between start and resume unless you intend a different grid (skipped keys are `(channel, mcs, noise_power_dB, trial)`).
+- RSL default `--noise` is **11 values** (`6,4,2,…,-20`); a 20-point list like the example above must be passed on **both** start and resume.
+
+### RSL-only flags (in addition to `run_montecarlo.sh` flags)
+
+| Flag | Default | Definition |
+|------|---------|------------|
+| `--max-retries` | `3` | Attempts per trial before logging give-up (no CSV row until success or final attempt) |
+| `--resume-dir` | (none) | Existing `montecarlo_results_rsl/<timestamp>_rsl/` directory; do not create a new timestamp folder |
+| `--no-save-trial-logs` | off | Skip `trial_logs/` archival (saves disk) |
+| `--save-all-attempts` | off | Archive every RSL retry folder (`_attemptN` suffix), not only successful/final runs |
+
+**Verify terrain after a run:**
+
+```bash
+RUN=montecarlo_results_rsl/20260521_222458_rsl
+column -t -s $'\t' "$RUN/bictr_terrain_index.tsv" | head
+grep 'DEM terrain mode' "$RUN/trial_logs"/*/bictr_verify.txt | head -3
+```
+
+All other flags (`--mcs`, `--noise`, `--snr`, `--trials`, `--target-tx`, `--warmup`, `--duration`, `--early-stop`, `--stall-timeout`, `--channels`) behave the same as `run_montecarlo.sh`.
 
 ---
 
@@ -251,14 +364,52 @@ start_stats.txt  ← nrMAC_stats.log after --warmup
 end_stats.txt    ← nrMAC_stats.log after measurement
 ```
 
-Extracts OAI fields `dlsch_rounds`, `dlsch_errors`, `ulsch_rounds`, `ulsch_errors`, computes **delta** first-TX and BLER = errors / first-TX. stdout is appended to the CSV row by `run_montecarlo.sh`.
+Extracts OAI fields `dlsch_rounds`, `dlsch_errors`, `ulsch_rounds`, `ulsch_errors`, computes **delta** first-TX and:
+
+```text
+BLER = min(Δ(errors) / Δ(rounds[0]), 1.0)
+```
+
+stdout is appended to the CSV row by `run_montecarlo.sh`.
+
+### Why BLER can exceed 1.0 before capping
+
+The script uses **two independent OAI counters**:
+
+| Counter | Meaning (approx.) |
+|---------|-------------------|
+| `dlsch_rounds` / `0` | First HARQ transmission attempts (`dl.rounds[harq->round]++` at round 0) |
+| `dlsch_errors` | Cumulative DL NACK/feedback failures (`dl.errors++` on failed ACK) |
+
+They are related but **not** defined as “one error per first-TX TB.” Over a short stats snapshot window you can get `Δerrors > Δrounds[0]` (e.g. **107 errors / 106 first TX → 1.009** in a real run) because of:
+
+1. **Event mismatch** — An error can be counted on a NACK/DTX path without a matching round‑0 increment in the same 1 s sample.
+2. **Snapshot timing** — Start/end copies of `nrMAC_stats.log` are not atomic; counters advance mid-slot.
+3. **HARQ/feedback edge cases** — Retransmission and PUCCH handling can bump `errors` differently than `rounds[0]`.
+
+Values **≥ 1** are stored as **1.0** (saturation). `plot_montecarlo.py` also clamps when aggregating/plotting.
 
 ---
 
 ## Resume and early-stop
 
-- **Resume:** Re-run with the same `MC_RUN_DIR` (or same `montecarlo_results/<timestamp>/`). Existing `(channel, mcs, noise, trial)` rows are skipped.
+### `run_montecarlo.sh` (standard)
+
+- **Resume:** Point `MC_RUN_DIR` at an existing `montecarlo_results/<timestamp>/`, or re-run into the same directory so `montecarlo_results.csv` is found. Existing `(channel, mcs, noise_power_dB, trial)` rows are skipped.
 - **Early-stop:** `--early-stop N` skips remaining trials for a cell after N consecutive saturated or clean results.
+
+```bash
+export MC_RUN_DIR="$(pwd)/montecarlo_results/20260521_155838"
+sudo ./run_montecarlo.sh --noise 8,6,4,2,0,-2,-4,-6,-8,-10,-12,-14,-16,-18,-20,-22,-24,-26,-28,-30 --trials 1 --target-tx 100
+```
+
+### `run_montecarlo_rsl.sh` (resilient)
+
+See [What is the RSL script?](#what-is-the-rsl-script) for when to use it vs the standard driver.
+
+- **Resume:** Use **`--resume-dir montecarlo_results_rsl/<timestamp>_rsl`** (see [Resilient sweeps](#resilient-sweeps-run_montecarlo_rslsh)).
+- **Retries:** Failed trials (stall / timeout) are retried automatically; only the resilient script writes `rsl_events.log`.
+- **Early-stop:** Same `--early-stop` semantics as the standard driver.
 
 ---
 

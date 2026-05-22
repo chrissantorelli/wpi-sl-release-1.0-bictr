@@ -29,6 +29,7 @@ __pycache__/
 bictr_analysis/montecarlo_parallel_builds/
 bictr_analysis/montecarlo_parallel_builds_lunar/
 bictr_analysis/montecarlo_results/
+bictr_analysis/montecarlo_results_rsl/
 bictr_analysis/results/
 bictr_analysis/merged_*/
 bictr_analysis/shards/

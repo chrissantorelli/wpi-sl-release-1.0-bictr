@@ -1,3 +1,0 @@
-channel_type,mcs,noise_power_dB,trial,dl_first_tx,dl_errors,dl_bler,dl_harq,ul_first_tx,ul_errors,ul_bler
-BICTR_LUNAR,9,4,1,59,59,1.000000,59/59/60/59,59,59,1.000000
-BICTR_LUNAR,9,4,2,53,53,1.000000,53/54/54/53,53,53,1.000000

@@ -35,3 +35,4 @@ bictr_analysis/shards/
 bictr_terrain/*.JP2
 bictr_terrain/*.bdem
 bictr_terrain/.venv/
+bictr_analysis/montecarlo_results2/

@@ -22,6 +22,8 @@ tags
 nfapi_nr_interface_scf
 *.log
 *.out
+__pycache__/
+*.pyc
 
 # BICTR / Monte Carlo generated outputs (do not push large CSVs and plots)
 bictr_analysis/montecarlo_parallel_builds/

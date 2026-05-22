@@ -38,14 +38,11 @@ bictr_terrain/*.JP2
 bictr_terrain/*.bdem
 bictr_terrain/.venv/
 bictr_analysis/montecarlo_results2/
-Dockerfile.montecarlo
-scripts/
 
-# Local Monte Carlo Docker files
+# Local Monte Carlo Docker files (repo root only; archived copies under old/ are tracked)
 /Dockerfile.montecarlo
 /scripts/
 
-# Remove these local folders from GitHub
-/bictr_analysis/
+# Local-only (not the active bictr_analysis scripts/README)
 /bictr_terrain/
 /charts/physims/

@@ -1,0 +1,77 @@
+# Monte Carlo BLER sweep image (BICTR + OAI RFSim phy-test).
+# Build from repo root:
+#   docker build -f Dockerfile.montecarlo -t oai-montecarlo:latest .
+#
+# Run via: bictr_analysis/docker-run-montecarlo.sh
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV OAI_ROOT=/opt/openairinterface5g
+
+RUN apt-get update && apt-get install -y \
+    git \
+    sudo \
+    build-essential \
+    cmake \
+    ninja-build \
+    python3 \
+    python3-pip \
+    python3-venv \
+    pkg-config \
+    net-tools \
+    iproute2 \
+    iputils-ping \
+    ca-certificates \
+    wget \
+    curl \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    libnuma1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR ${OAI_ROOT}
+
+COPY . .
+
+# Host-specific absolute paths in BICTR configs -> paths inside the container.
+RUN set -e; \
+    for f in targets/PROJECTS/GENERIC-NR-5GC/CONF/*bictr*.conf; do \
+      [ -f "$f" ] || continue; \
+      sed -i 's|/home/chris/openairinterface5g|/opt/openairinterface5g|g' "$f"; \
+    done
+
+# Install OAI build dependencies and build gNB + NR UE (RFSim / phy-test).
+RUN cd cmake_targets && ./build_oai -I
+
+RUN cd cmake_targets && ./build_oai --ninja --gNB --nrUE
+
+# phy-test needs reconfig.raw / rbconfig.raw in the build dir (see run_montecarlo.sh).
+RUN if [ -f bictr_analysis/phytest_rrc/reconfig.raw ]; then \
+      cp bictr_analysis/phytest_rrc/reconfig.raw \
+         bictr_analysis/phytest_rrc/rbconfig.raw \
+         cmake_targets/ran_build/build/; \
+    fi
+
+# Ubuntu 24.04 blocks system pip (PEP 668); use distro packages for plotting.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-numpy \
+    python3-matplotlib \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/docker-montecarlo-entry.sh /usr/local/bin/docker-montecarlo-entry.sh
+RUN chmod +x /usr/local/bin/docker-montecarlo-entry.sh
+
+# Pre-create the netns mount root so `ip netns add` works inside the container
+# (also created defensively by the entrypoint at run time).
+RUN mkdir -p /var/run/netns
+
+WORKDIR ${OAI_ROOT}/bictr_analysis
+
+# Large terrain rasters are gitignored; mount bictr_terrain/ at run time.
+# Do not VOLUME montecarlo_results/ — it hides host bind-mounts; docker-run-montecarlo.sh
+# mounts that directory explicitly so logs and CSVs are visible on the host.
+
+ENTRYPOINT ["/usr/local/bin/docker-montecarlo-entry.sh"]
+CMD ["bash"]

@@ -27,6 +27,12 @@
 
 #define SL_DEBUG
 
+#ifdef ENABLE_BLER_INSTRUMENTATION
+static uint32_t pc5_rx_blocks_total = 0;
+static uint32_t pc5_rx_blocks_error = 0;
+static bool pc5_reset_done_at_1000 = false;
+#endif
+
 static const int sequence_cyclic_shift_harq_ack_or_ack_or_only_nack[2]
 /* Sequence cyclic shift */ = {  0, 6 };
 
@@ -1067,6 +1073,37 @@ void nr_ue_process_mac_sl_pdu(int module_idP,
 
   LOG_D(NR_MAC, "%4d.%2d ack_nack %d pdu_type %d mac->sci_pdu_rx.csi_req %d\n",
         frame, slot, rx_slsch_pdu->ack_nack, pdu_type, mac->sci_pdu_rx.csi_req);
+
+#ifdef ENABLE_BLER_INSTRUMENTATION
+  if (pdu_type != SL_NR_RX_PDU_TYPE_SLSCH_PSFCH) {
+    pc5_rx_blocks_total++;
+
+    uint8_t rx_mcs = mac->sci_pdu_rx.mcs;
+
+    bool crc_failed = (rx_slsch_pdu->ack_nack == 0);
+
+    if (crc_failed) {
+      pc5_rx_blocks_error++;
+
+      LOG_D(NR_MAC, "[BLER_STATS] %d.%d PC5_RX_BLOCK_ERROR mcs=%u total=%u errors=%u\n",
+            frame, slot, rx_mcs, pc5_rx_blocks_total, pc5_rx_blocks_error);
+    }
+
+    if (pc5_rx_blocks_total % 100 == 0 && pc5_rx_blocks_total > 0 && pc5_rx_blocks_total <= 1000) {
+      float bler = (float)pc5_rx_blocks_error / (float)pc5_rx_blocks_total;
+
+      LOG_I(NR_MAC, "[BLER_STATS] %d.%d PC5_RX_SUMMARY mcs=%u total=%u errors=%u BLER=%.4f\n",
+            frame, slot, rx_mcs, pc5_rx_blocks_total, pc5_rx_blocks_error, bler);
+    }
+
+    if (pc5_rx_blocks_total >= 1000 && !pc5_reset_done_at_1000) {
+      pc5_reset_done_at_1000 = true;
+      pc5_rx_blocks_total = 0;
+      pc5_rx_blocks_error = 0;
+    }
+  }
+#endif
+
   if (rx_slsch_pdu->ack_nack == 0)
     return;
 

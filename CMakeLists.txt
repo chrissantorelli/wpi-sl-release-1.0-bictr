@@ -50,6 +50,17 @@ else()
   message(STATUS "Ccache not found. Consider installing it for faster compilation. Command: sudo apt/dnf install ccache")
 endif()
 
+##############################
+### BLER Instrumentation
+##############################
+option(ENABLE_BLER_INSTRUMENTATION "Enable BLER/HARQ/LDPC logging for sidelink testing" OFF)
+if(ENABLE_BLER_INSTRUMENTATION)
+    add_definitions(-DENABLE_BLER_INSTRUMENTATION)
+    message(STATUS "BLER instrumentation: ENABLED")
+else()
+    message(STATUS "BLER instrumentation: DISABLED")
+endif()
+
 # System packages that are required
 # We use either the cmake buildin, in ubuntu are in: /usr/share/cmake*/Modules/
 # or cmake provide a generic interface to pkg-config that widely used

@@ -807,6 +807,7 @@ typedef struct LDPCDecode_s {
   int offset;
   int decodeIterations;
   uint32_t tbslbrm;
+  uint8_t mcs_index;
 } ldpcDecode_t;
 
 struct ldpcReqId {

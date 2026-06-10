@@ -61,6 +61,19 @@ extern const int pscch_rb_table[5];
 #define SLOT_INFO_DEBUG
 #define BITMAP_DEBUG
 
+#ifdef ENABLE_BLER_INSTRUMENTATION
+static uint32_t pc5_tx_rounds[4];
+static uint32_t pc5_tx_total;
+static bool pc5_tx_reset_done_at_1000;
+/* PSFCH feedback funnel debug counters (shared with nr_ue_procedures_sl.c) */
+uint32_t psfch_dbg_cfg_calls = 0;   /* configure_psfch_params_tx invoked (feedback requested on RX) */
+uint32_t psfch_dbg_idx_ok = 0;      /* nr_ue_sl_acknack_scheduling returned a valid index */
+uint32_t psfch_dbg_chk = 0;         /* feedback slots checked at TX time */
+uint32_t psfch_dbg_fbslot_true = 0; /* is_feedback_scheduled() returned true */
+uint32_t psfch_dbg_resalloc = 0;    /* feedback due AND own PSSCH resource allocated */
+uint32_t psfch_dbg_tx = 0;          /* PSFCH actually scheduled for TX */
+#endif
+
 static prach_association_pattern_t prach_assoc_pattern;
 static void nr_ue_prach_scheduler(module_id_t module_idP, frame_t frameP, sub_frame_t slotP);
 
@@ -3497,7 +3510,20 @@ bool nr_ue_sl_pssch_scheduler(NR_UE_MAC_INST_t *mac,
     cur_harq = &sched_ctrl->sl_harq_processes[harq_id];
     DevAssert(!cur_harq->is_waiting);
     /* retransmission or bytes to send */
-    if (configured_PSFCH && ((cur_harq->round != 0) || (sched_ctrl->num_total_bytes > 0))) {
+#ifdef ENABLE_BLER_INSTRUMENTATION
+    /* Measurement mode: single-host RFSim carries no user-plane STCH data, so
+     * num_total_bytes is ~always 0 and the link-adaptation path never requests
+     * HARQ feedback — leaving the HARQ Tx-round distribution unexercised. Here
+     * we request feedback on every transmitted TB (control/CSI/padding still
+     * carry a CRC, so ACK/NACK is meaningful for link reliability). Lost or late
+     * PSFCH is reclaimed as an implicit NACK by update_harq_lists(), so the HARQ
+     * process pool cannot stall. */
+    bool request_feedback = (configured_PSFCH != NULL);
+#else
+    bool request_feedback = configured_PSFCH
+                            && ((cur_harq->round != 0) || (sched_ctrl->num_total_bytes > 0));
+#endif
+    if (request_feedback) {
       cur_harq->feedback_slot = feedback_slot;
       cur_harq->feedback_frame = feedback_frame;
       add_tail_nr_list(&sched_ctrl->feedback_sl_harq, harq_id);
@@ -3559,6 +3585,28 @@ bool nr_ue_sl_pssch_scheduler(NR_UE_MAC_INST_t *mac,
     AssertFatal(cur_harq->round < sl_mac_params->sl_bler.harq_round_max, "Indexing ulsch_rounds[%d] is out of bounds for max harq round %d\n", cur_harq->round, sl_mac_params->sl_bler.harq_round_max);
 
     sl_mac_stats->rounds[cur_harq->round]++;
+#ifdef ENABLE_BLER_INSTRUMENTATION
+    pc5_tx_rounds[cur_harq->round]++;
+    pc5_tx_total++;
+    if (pc5_tx_total % 100 == 0 && pc5_tx_total > 0 && pc5_tx_total <= 1000) {
+      LOG_I(NR_MAC,
+            "[BLER_STATS] %d.%d PC5_TX_SUMMARY mcs=%u total=%u harq_r0=%u r1=%u r2=%u r3=%u\n",
+            frame,
+            slot,
+            sched_pssch->mcs,
+            pc5_tx_total,
+            pc5_tx_rounds[0],
+            pc5_tx_rounds[1],
+            pc5_tx_rounds[2],
+            pc5_tx_rounds[3]);
+    }
+    if (pc5_tx_total >= 1000 && !pc5_tx_reset_done_at_1000) {
+      pc5_tx_reset_done_at_1000 = true;
+      pc5_tx_total = 0;
+      for (int i = 0; i < 4; i++)
+        pc5_tx_rounds[i] = 0;
+    }
+#endif
     if (cur_harq->round != 0) { // retransmission
       LOG_D(NR_MAC,
             "PSSCH: %d.%2d SL retransmission sched %d.%2d HARQ PID %d round %d NDI %d\n",
@@ -4015,8 +4063,23 @@ void nr_ue_sidelink_scheduler(nr_sidelink_indication_t *sl_ind) {
       LOG_D(NR_MAC, "%4d.%2d Scheduling CSI-RS\n", frame, slot);
     }
     bool is_feedback_slot = mac->sl_tx_res_pool->sl_PSFCH_Config_r16 ? is_feedback_scheduled(mac, frame, slot) : false;
+#ifdef ENABLE_BLER_INSTRUMENTATION
+    if (mac->sl_tx_res_pool->sl_PSFCH_Config_r16) {
+      psfch_dbg_chk++;
+      if (is_feedback_slot) psfch_dbg_fbslot_true++;
+      if (is_feedback_slot && is_resource_allocated) psfch_dbg_resalloc++;
+      if ((psfch_dbg_chk % 200) == 0)
+        LOG_I(NR_MAC,
+              "[BLER_STATS] %d.%d PC5_PSFCH_DEBUG cfg=%u idx_ok=%u chk=%u fbslot=%u resalloc=%u tx=%u\n",
+              frame, slot, psfch_dbg_cfg_calls, psfch_dbg_idx_ok, psfch_dbg_chk,
+              psfch_dbg_fbslot_true, psfch_dbg_resalloc, psfch_dbg_tx);
+    }
+#endif
     if (is_resource_allocated && is_feedback_slot && mac->sl_tx_res_pool->sl_PSFCH_Config_r16->choice.setup) {
       if (is_feedback_slot) {
+#ifdef ENABLE_BLER_INSTRUMENTATION
+        psfch_dbg_tx++;
+#endif
         nr_ue_sl_psfch_scheduler(mac, frame, slot, psfch_period, sl_ind, mac->sl_bwp, &tx_config, &tti_action);
         reset_sched_psfch(mac, frame, slot);
       }

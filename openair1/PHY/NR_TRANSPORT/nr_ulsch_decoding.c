@@ -251,6 +251,20 @@ static void nr_processULSegment(void *arg)
   p_decoderParms->crc_type = crc_type;
   rdata->decodeIterations = nrLDPC_decoder(p_decoderParms, (int8_t *)pl, llrProcBuf, p_procTime, &ulsch_harq->abort_decode);
 
+#ifdef ENABLE_BLER_INSTRUMENTATION
+  if (rdata->UE != NULL) {
+    bool decodeSuccess = (rdata->decodeIterations <= p_decoderParms->numMaxIter);
+    LOG_I(NR_PHY,
+          "[LDPC_STATS] %d.%d PC5_LDPC_ITERATIONS mcs=%u iterations=%u max=%u success=%d\n",
+          rdata->ulsch->frame,
+          rdata->ulsch->slot,
+          rdata->mcs_index,
+          rdata->decodeIterations,
+          p_decoderParms->numMaxIter,
+          decodeSuccess ? 1 : 0);
+  }
+#endif
+
   if (rdata->decodeIterations <= p_decoderParms->numMaxIter)
     memcpy(ulsch_harq->c[r],llrProcBuf,  Kr>>3);
 #ifdef DEBUG_ULSCH_DECODING
@@ -535,6 +549,7 @@ int nr_ulsch_decoding(PHY_VARS_gNB *phy_vars_gNB,
       rdata->ulsch = ulsch;
       rdata->ulsch_id = ULSCH_id;
       rdata->tbslbrm = pusch_pdu->maintenance_parms_v3.tbSizeLbrmBytes;
+      rdata->mcs_index = mcs;
       pushTpool(phy_vars_gNB ? &phy_vars_gNB->threadPool : Tpool, req);
       LOG_D(PHY, "Added a block to decode, in pipe: %d\n", r);
       r_offset += E;

@@ -621,6 +621,15 @@ void configure_psfch_params_tx(int module_idP,
   compute_params(module_idP, psfch_params);
   const int nr_slots_frame = nr_slots_per_frame[scs];
   int psfch_index = nr_ue_sl_acknack_scheduling(mac, rx_ind, psfch_period, tx_frame, tx_slot, nr_slots_frame);
+#ifdef ENABLE_BLER_INSTRUMENTATION
+  extern uint32_t psfch_dbg_cfg_calls, psfch_dbg_idx_ok;
+  psfch_dbg_cfg_calls++;
+  if (psfch_index != -1) psfch_dbg_idx_ok++;
+  LOG_D(NR_MAC,
+        "[BLER_STATS] PC5_PSFCH_CFG rx=%u.%u tx=%u.%u ack_nack=%u psfch_index=%d fb_slot=%d harq_fb=%d\n",
+        rx_ind->sfn, rx_ind->slot, tx_frame, tx_slot, ack_nack, psfch_index,
+        get_feedback_slot(psfch_period, tx_slot), mac->sci_pdu_rx.harq_feedback);
+#endif
   if (psfch_index != -1)
     fill_psfch_params_tx(mac, rx_ind, psfch_period, tx_frame, tx_slot, ack_nack, psfch_params, nr_slots_frame, psfch_index);
   free(psfch_params);
@@ -1092,8 +1101,12 @@ void nr_ue_process_mac_sl_pdu(int module_idP,
     if (pc5_rx_blocks_total % 100 == 0 && pc5_rx_blocks_total > 0 && pc5_rx_blocks_total <= 1000) {
       float bler = (float)pc5_rx_blocks_error / (float)pc5_rx_blocks_total;
 
-      LOG_I(NR_MAC, "[BLER_STATS] %d.%d PC5_RX_SUMMARY mcs=%u total=%u errors=%u BLER=%.4f\n",
-            frame, slot, rx_mcs, pc5_rx_blocks_total, pc5_rx_blocks_error, bler);
+      LOG_I(NR_MAC, "[BLER_STATS] %d.%d PC5_RX_SUMMARY mcs=%u total=%u errors=%u BLER=%.4f harq_r0=%lu r1=%lu r2=%lu r3=%lu\n",
+            frame, slot, rx_mcs, pc5_rx_blocks_total, pc5_rx_blocks_error, bler,
+            (unsigned long)UE->mac_sl_stats.sl.rounds[0],
+            (unsigned long)UE->mac_sl_stats.sl.rounds[1],
+            (unsigned long)UE->mac_sl_stats.sl.rounds[2],
+            (unsigned long)UE->mac_sl_stats.sl.rounds[3]);
     }
 
     if (pc5_rx_blocks_total >= 1000 && !pc5_reset_done_at_1000) {

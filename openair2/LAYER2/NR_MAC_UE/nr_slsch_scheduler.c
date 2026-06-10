@@ -91,9 +91,12 @@ void handle_nr_ue_sl_harq(module_id_t mod_id,
 {
   NR_UE_MAC_INST_t *mac = get_mac_inst(mod_id);
   NR_UE_SL_SCHED_LOCK(&mac->sl_sched_lock);
-  NR_SL_UE_info_t **UE_SL_temp = (NR_SL_UE_info_t **)&mac->sl_info.list, *UE;
-  // TODO: update for multiple UEs
-  UE=*(UE_SL_temp);
+  NR_SL_UE_info_t *UE = find_UE(mac, src_id);
+  if (UE == NULL) {
+    LOG_W(NR_MAC, "handle_nr_ue_sl_harq: no UE entry for src_id %d\n", src_id);
+    NR_UE_SL_SCHED_UNLOCK(&mac->sl_sched_lock);
+    return;
+  }
   uint8_t num_ack_rcvd = rx_slsch_pdu->num_acks_rcvd;
 
   NR_SL_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
@@ -101,7 +104,10 @@ void handle_nr_ue_sl_harq(module_id_t mod_id,
   int k = find_current_slot_harqs(frame, slot, sched_ctrl, matched_harqs);
   LOG_D(NR_MAC, "Found %d matching HARQ processes vs. num. of received acks %d\n", k, num_ack_rcvd);
   for (int i = 0; i < num_ack_rcvd; i++) {
-    uint8_t ack_nack = rx_slsch_pdu->ack_nack_rcvd[i];
+    /* PHY PSFCH decode (nr_ue_decode_psfch0): 0 = ACK, 1 = NACK, -1 = DTX */
+    int8_t harq_fb = (int8_t)rx_slsch_pdu->ack_nack_rcvd[i];
+    if (harq_fb < 0)
+      continue;
     uint8_t rx_harq_id = matched_harqs[i]->sl_harq_pid;
     NR_SL_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
     int8_t harq_pid = sched_ctrl->feedback_sl_harq.head;
@@ -133,7 +139,7 @@ void handle_nr_ue_sl_harq(module_id_t mod_id,
     DevAssert(harq->is_waiting);
     harq->feedback_slot = -1;
     harq->is_waiting = false;
-    if (!ack_nack) {
+    if (harq_fb == 0) {
       UE->mac_sl_stats.cumul_round[harq->round]++;
 #ifdef ENABLE_BLER_INSTRUMENTATION
       UE->mac_sl_stats.sl.rounds[harq->round]++;

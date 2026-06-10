@@ -34,7 +34,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 #include "executables/softmodem-common.h"
 #include "nr_transport_proto_ue.h"
 #include "PHY/CODING/nrPolar_tools/nr_polar_dci_defs.h"
@@ -46,6 +45,12 @@
 
 #include "assertions.h"
 #include "T.h"
+
+#ifdef ENABLE_BLER_INSTRUMENTATION
+static uint32_t pc5_pscch_rx_total = 0;
+static uint32_t pc5_pscch_rx_error = 0;
+static bool pc5_pscch_reset_done_at_1000 = false;
+#endif
 
 char nr_dci_format_string[8][30] = {
   "NR_DL_DCI_FORMAT_1_0",
@@ -859,6 +864,13 @@ uint8_t nr_dci_decoding_procedure(PHY_VARS_NR_UE *ue,
   if (pscch_flag == 0) dci_ind = (fapi_nr_dci_indication_t*)ind;
   else sci_ind = (sl_nr_sci_indication_t *)ind;
 
+  int pscch_sci_before = 0;
+  if (pscch_flag && sci_ind) {
+#ifdef ENABLE_BLER_INSTRUMENTATION
+    pscch_sci_before = sci_ind->number_of_SCIs;
+#endif
+  }
+
   for (int j=0;j<rel15->number_of_candidates;j++) {
     int CCEind = rel15->CCE[j];
     int L = rel15->L[j];
@@ -961,6 +973,31 @@ uint8_t nr_dci_decoding_procedure(PHY_VARS_NR_UE *ue,
     }
     e_rx_cand_idx += 9*L*6*2; //e_rx index for next candidate (L CCEs, 6 REGs per CCE and 9 REs per REG and 2 uint16_t per RE)
   }
+
+#ifdef ENABLE_BLER_INSTRUMENTATION
+  if (pscch_flag && sci_ind) {
+    pc5_pscch_rx_total++;
+    if (sci_ind->number_of_SCIs == pscch_sci_before) {
+      pc5_pscch_rx_error++;
+    }
+    if (pc5_pscch_rx_total % 100 == 0 && pc5_pscch_rx_total > 0 && pc5_pscch_rx_total <= 1000) {
+      float bler = (float)pc5_pscch_rx_error / (float)pc5_pscch_rx_total;
+      LOG_I(NR_MAC,
+            "[BLER_STATS] %d.%d PC5_PSCCH_RX_SUMMARY total=%u errors=%u BLER=%.4f\n",
+            proc->frame_rx,
+            proc->nr_slot_rx,
+            pc5_pscch_rx_total,
+            pc5_pscch_rx_error,
+            bler);
+    }
+    if (pc5_pscch_rx_total >= 1000 && !pc5_pscch_reset_done_at_1000) {
+      pc5_pscch_reset_done_at_1000 = true;
+      pc5_pscch_rx_total = 0;
+      pc5_pscch_rx_error = 0;
+    }
+  }
+#endif
+
   return(dci_ind ? dci_ind->number_of_dcis : sci_ind->number_of_SCIs);
 }
 

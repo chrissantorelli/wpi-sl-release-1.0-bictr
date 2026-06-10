@@ -109,6 +109,7 @@ static telnetshell_cmddef_t *setmodel_cmddef = &(rfsimu_cmdarray[1]);
 
 static telnetshell_vardef_t rfsimu_vardef[] = {{"", 0, 0, NULL}};
 pthread_mutex_t Sockmutex;
+static bool Sockmutex_initialized = false;
 
 typedef c16_t sample_t; // 2*16 bits complex number
 
@@ -130,6 +131,7 @@ typedef struct {
   openair0_timestamp nextRxTstamp;
   openair0_timestamp lastWroteTS;
   uint64_t typeStamp;
+  uint64_t typeStamp_sl;
   char *ip;
   char *ip_sl;
   uint16_t port;
@@ -316,11 +318,14 @@ static void rfsimulator_readconfig(rfsimulator_state_t *rfsimulator) {
   }
 
   if ( strncasecmp(rfsimulator->ip,"enb",3) == 0 ||
-       strncasecmp(rfsimulator->ip,"server",3) == 0 ||
-       strncasecmp(rfsimulator->ip_sl,"server",3) == 0 )
+       strncasecmp(rfsimulator->ip,"server",3) == 0 )
     rfsimulator->typeStamp = ENB_MAGICDL;
   else
     rfsimulator->typeStamp = UE_MAGICDL;
+
+  rfsimulator->typeStamp_sl =
+    (strncasecmp(rfsimulator->ip_sl,"enb",3) == 0 ||
+     strncasecmp(rfsimulator->ip_sl,"server",3) == 0) ? ENB_MAGICDL : UE_MAGICDL;
 }
 
 static int rfsimu_setchanmod_cmd(char *buff, int debug, telnet_printfunc_t prnt, void *arg) {
@@ -780,6 +785,11 @@ static bool flushInput(rfsimulator_state_t *t, int timeout, int nsamps_for_initi
 
       // check the header and start block transfer
       if ( b->headerMode==true && b->remainToTransfer==0) {
+        if (!((t->typeStamp == UE_MAGICDL && b->th.magic==ENB_MAGICDL) ||
+              (t->typeStamp == ENB_MAGICDL && b->th.magic==UE_MAGICDL))) {
+          LOG_E(HW, "Protocol mismatch: typeStamp=0x%lx magic=0x%lx fd=%d port=%d port_sl=%d nextRxTS=%ld th.timestamp=%ld th.size=%d\n",
+                (unsigned long)t->typeStamp, (unsigned long)b->th.magic, fd, t->port, t->port_sl, t->nextRxTstamp, b->th.timestamp, b->th.size);
+        }
         AssertFatal( (t->typeStamp == UE_MAGICDL  && b->th.magic==ENB_MAGICDL) ||
                      (t->typeStamp == ENB_MAGICDL && b->th.magic==UE_MAGICDL), "Socket Error in protocol");
         b->headerMode=false;
@@ -1008,12 +1018,16 @@ int device_init(openair0_device *device, openair0_config_t *openair0_cfg) {
   rfsimulator->tx_bw=openair0_cfg->tx_bw;  
   rfsimulator_readconfig(rfsimulator);
   LOG_W(HW, "rfsim: sample_rate %f\n", rfsimulator->sample_rate);
-  pthread_mutex_init(&Sockmutex, NULL);
-  LOG_I(HW,"rfsimulator: running as %s\n", rfsimulator-> typeStamp == ENB_MAGICDL ? "server waiting opposite rfsimulators to connect" : "client: will connect to a rfsimulator server side");
+  if (!Sockmutex_initialized) {
+    pthread_mutex_init(&Sockmutex, NULL);
+    Sockmutex_initialized = true;
+  }
+  LOG_I(HW,"rfsimulator: Uu running as %s\n", rfsimulator->typeStamp == ENB_MAGICDL ? "server" : "client");
+  LOG_I(HW,"rfsimulator: SL running as %s\n", rfsimulator->typeStamp_sl == ENB_MAGICDL ? "server" : "client");
   device->trx_start_func       = rfsimulator->typeStamp == ENB_MAGICDL ?
                                  startServer :
                                  startClient;
-  device->trx_start_func_sl    = rfsimulator->typeStamp == ENB_MAGICDL ?
+  device->trx_start_func_sl    = rfsimulator->typeStamp_sl == ENB_MAGICDL ?
                                  startServerSL :
                                  startClientSL;
   device->trx_get_stats_func   = rfsimulator_get_stats;

@@ -35,6 +35,16 @@
 #include "PHY/NR_REFSIG/refsig_defs_ue.h"
 #include "radio/COMMON/common_lib.h"
 #include "LAYER2/nr_pdcp/nr_pdcp_oai_api.h"
+#include "LAYER2/nr_srap/nr_srap_oai_api.h"
+
+/* U2N remote UE: SL Mode 1 scheduling (SRAP/Type-1 CG via relay) but no direct Uu
+ * radio — PC5-only PHY like sl_mode 2, without using the Mode-2 scheduler path. */
+static bool is_u2n_remote_sl_mode1(void)
+{
+  return get_softmodem_params()->sl_mode == 1
+      && get_softmodem_params()->relay_type == U2N
+      && !get_softmodem_params()->is_relay_ue;
+}
 
 /*
  *  NR SLOT PROCESSING SEQUENCE
@@ -1111,7 +1121,9 @@ void *UE_RU_thread(void *arg)
   openair0_timestamp timestampSl, writeTimestampSl;
 
   uint8_t sl_mode = UE->sl_mode;
-  NR_DL_FRAME_PARMS *fp = sl_mode == 2 ? &UE->SL_UE_PHY_PARAMS.sl_frame_params : &UE->frame_parms;
+  NR_DL_FRAME_PARMS *fp = (sl_mode == 2 || is_u2n_remote_sl_mode1())
+                             ? &UE->SL_UE_PHY_PARAMS.sl_frame_params
+                             : &UE->frame_parms;
 
   notifiedFIFO_t txFifo;
   initNotifiedFIFO(&txFifo);
@@ -1158,9 +1170,11 @@ void *UE_RU_thread(void *arg)
         break;
 
       case 1:
-        update_curMsg(UE, &curMsg, absolute_slot, nb_slot_frame, UU);
-        rfdevice_trx(UE, &UE->rfdevice, UE->common_vars.rxdata, slot_nr, &readBlockSize, &writeBlockSize, &timestamp, &writeTimestamp, &timing_advance, UU);
-        UE_processing(UE, &curMsg, readBlockSize, writeBlockSize, writeTimestamp, &txFifo, UU);
+        if (!is_u2n_remote_sl_mode1()) {
+          update_curMsg(UE, &curMsg, absolute_slot, nb_slot_frame, UU);
+          rfdevice_trx(UE, &UE->rfdevice, UE->common_vars.rxdata, slot_nr, &readBlockSize, &writeBlockSize, &timestamp, &writeTimestamp, &timing_advance, UU);
+          UE_processing(UE, &curMsg, readBlockSize, writeBlockSize, writeTimestamp, &txFifo, UU);
+        }
 
         if (UE->is_synchronized_sl) {
           update_curMsg(UE, &curMsgSl, absolute_slot, nb_slot_frame, PC5);
@@ -1383,11 +1397,10 @@ void init_NR_UE_threads(int nb_inst) {
     PHY_VARS_NR_UE *UE = PHY_vars_UE_g[inst][0];
 
     LOG_I(PHY,"Intializing UE Threads for instance %d (%p,%p)...\n",inst,PHY_vars_UE_g[inst],PHY_vars_UE_g[inst][0]);
-    if (sl_mode == 0 || sl_mode == 1) {
-      threadCreate(&threads[inst], UE_thread, (void *)UE, "UEthread", -1, OAI_PRIORITY_RT_MAX);
-    }
-    else {
+    if (sl_mode == 2 || is_u2n_remote_sl_mode1()) {
       threadCreate(&threads_sl[inst], UE_thread_sl, (void *)UE, "UEthreadsl", -1, OAI_PRIORITY_RT_MAX);
+    } else if (sl_mode == 0 || sl_mode == 1) {
+      threadCreate(&threads[inst], UE_thread, (void *)UE, "UEthread", -1, OAI_PRIORITY_RT_MAX);
     }
     threadCreate(&threads_sl[inst], UE_RU_thread, (void *)UE, "UERUthread", -1, OAI_PRIORITY_RT_MAX);
     if (!IS_SOFTMODEM_NOSTATS_BIT) {

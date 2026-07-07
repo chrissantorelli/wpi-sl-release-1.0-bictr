@@ -252,12 +252,13 @@ static void nr_processULSegment(void *arg)
   rdata->decodeIterations = nrLDPC_decoder(p_decoderParms, (int8_t *)pl, llrProcBuf, p_procTime, &ulsch_harq->abort_decode);
 
 #ifdef ENABLE_BLER_INSTRUMENTATION
-  if (rdata->UE != NULL) {
+  {
     bool decodeSuccess = (rdata->decodeIterations <= p_decoderParms->numMaxIter);
     LOG_I(NR_PHY,
-          "[LDPC_STATS] %d.%d PC5_LDPC_ITERATIONS mcs=%u iterations=%u max=%u success=%d\n",
+          "[LDPC_STATS] %d.%d %s mcs=%u iterations=%u max=%u success=%d\n",
           rdata->ulsch->frame,
           rdata->ulsch->slot,
+          rdata->UE != NULL ? "PC5_LDPC_ITERATIONS" : "GNB_UL_LDPC_ITERATIONS",
           rdata->mcs_index,
           rdata->decodeIterations,
           p_decoderParms->numMaxIter,

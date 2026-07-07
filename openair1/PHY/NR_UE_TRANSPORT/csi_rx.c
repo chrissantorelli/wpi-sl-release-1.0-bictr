@@ -1104,6 +1104,12 @@ void nr_ue_csi_rs_procedures(PHY_VARS_NR_UE *ue, NR_DL_FRAME_PARMS *frame_parms,
         get_nrUE_params()->snr = sl_sinr_dB;
         LOG_D(NR_PHY, "Rx CSI-RS %4d.%2d sl_sinr %i rsrp %d dBm cqi %d\n",
               proc->frame_rx, proc->nr_slot_rx, sl_sinr_dB, rsrp_dBm, cqi);
+#ifdef ENABLE_BLER_INSTRUMENTATION
+        /* SL CSI-RS measurement: closes the link-adaptation loop (reported CQI
+         * vs chosen MCS vs achieved BLER). Emitted per CSI-RS occasion. */
+        LOG_I(NR_PHY, "[BLER_STATS] %4d.%2d PC5_CSI_REPORT sinr_dB=%i rsrp_dBm=%d cqi=%d\n",
+              proc->frame_rx, proc->nr_slot_rx, sl_sinr_dB, rsrp_dBm, cqi);
+#endif
       } else {
         nr_csi_rs_cqi_estimation(precoded_sinr_dB, &cqi);
         LOG_D(NR_PHY, "Rx %4d.%2d snr %u rsrp %d dBm cqi %d\n",

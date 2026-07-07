@@ -535,6 +535,37 @@ void psbch_pscch_pssch_processing(PHY_VARS_NR_UE *ue,
             dB_fixed_x10(pssch_vars->ulsch_noise_power_tot),
             ue->pssch_thres);
     }
+#ifdef ENABLE_BLER_INSTRUMENTATION
+    /* Measured PSSCH signal/noise power (DMRS-based) -> SINR summary. Gives a
+     * measured-SINR axis for BLER curves instead of the injected channelmod
+     * noise_power_dB proxy. Averaged in dB over the summary window. */
+    {
+      static uint32_t pssch_sinr_meas = 0;
+      static uint32_t pssch_sinr_dtx = 0;
+      static int64_t pssch_sig_db_x10_sum = 0;
+      static int64_t pssch_noise_db_x10_sum = 0;
+      if (pssch_vars->DTX) {
+        pssch_sinr_dtx++;
+      } else {
+        pssch_sinr_meas++;
+        pssch_sig_db_x10_sum += dB_fixed_x10(pssch_vars->ulsch_power_tot);
+        pssch_noise_db_x10_sum += dB_fixed_x10(pssch_vars->ulsch_noise_power_tot);
+        if (pssch_sinr_meas % 100 == 0) {
+          float avg_sig_db = (float)pssch_sig_db_x10_sum / (10.0f * pssch_sinr_meas);
+          float avg_noise_db = (float)pssch_noise_db_x10_sum / (10.0f * pssch_sinr_meas);
+          LOG_I(NR_PHY,
+                "[BLER_STATS] %d.%d PC5_PSSCH_SINR_SUMMARY meas=%u avg_sig_dB=%.1f avg_noise_dB=%.1f avg_sinr_dB=%.1f dtx=%u\n",
+                frame_rx,
+                nr_slot_rx,
+                pssch_sinr_meas,
+                avg_sig_db,
+                avg_noise_db,
+                avg_sig_db - avg_noise_db,
+                pssch_sinr_dtx);
+        }
+      }
+    }
+#endif
   }
   LOG_D(PHY,"****** end Sidelink RX-Chain for AbsSubframe %d.%d ******\n",
                                                                 frame_rx, nr_slot_rx);

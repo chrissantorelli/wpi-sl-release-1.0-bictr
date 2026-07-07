@@ -621,6 +621,20 @@ int nr_ue_process_sci1_indication_pdu(NR_UE_MAC_INST_t *mac,module_id_t mod_id,f
 
   LOG_D(NR_MAC,"%4d.%2d Received sci indication (sci format %d, Nid %x, subChannelIndex %d, payloadSize %d,payload %llx) pscch_rsrp %d\n",
         frame, slot, sci->sci_format_type,sci->Nid,sci->subch_index,sci->sci_payloadlen,*(unsigned long long*)sci->sci_payloadBits, sci->pscch_rsrp);
+
+#ifdef ENABLE_BLER_INSTRUMENTATION
+  /* Measured PSCCH RSRP per decoded SCI-1A (also feeds Mode 2 sensing data). */
+  {
+    static uint32_t pscch_rsrp_count = 0;
+    static int64_t pscch_rsrp_sum = 0;
+    pscch_rsrp_count++;
+    pscch_rsrp_sum += sci->pscch_rsrp;
+    if (pscch_rsrp_count % 100 == 0) {
+      LOG_I(NR_MAC, "[BLER_STATS] %4d.%2d PC5_PSCCH_RSRP_SUMMARY count=%u avg_rsrp=%ld last_rsrp=%d\n",
+            frame, slot, pscch_rsrp_count, (long)(pscch_rsrp_sum / pscch_rsrp_count), sci->pscch_rsrp);
+    }
+  }
+#endif
   AssertFatal(sci->sci_format_type == SL_SCI_FORMAT_1A_ON_PSCCH, "need to have format 1A here only\n");
   extract_pscch_pdu((uint64_t *)sci->sci_payloadBits, sci->sci_payloadlen,sl_bwp, sl_res_pool, sci_pdu);
 

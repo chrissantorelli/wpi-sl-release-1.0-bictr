@@ -50,3 +50,5 @@ bictr_analysis/montecarlo_results2/
 # Local-only
 /bictr_terrain/
 /charts/physims/
+/harq_bler_figs/
+/sl_verify_logs/

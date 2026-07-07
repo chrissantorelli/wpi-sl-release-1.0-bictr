@@ -4089,7 +4089,13 @@ void nr_ue_sidelink_scheduler(nr_sidelink_indication_t *sl_ind) {
   if (((slot % 20) == 6) && ((frame % 100) == 0)) {
     char stats_output[16000] = {0};
     dump_mac_stats_sl(mac, stats_output, sizeof(stats_output), true);
+#ifdef ENABLE_BLER_INSTRUMENTATION
+    /* SL MAC cumulative stats (offered vs served bytes, per-LCID, CSI): part
+     * of the BLER data-collection set, so emit at LOG_I when instrumented. */
+    LOG_I(NR_MAC, "[BLER_STATS] SL_MAC_STATS %d.%d\n%s\n", frame, slot, stats_output);
+#else
     LOG_D(NR_MAC, "Frame.Slot %d.%d\n%s\n", frame, slot, stats_output);
+#endif
   }
 
   if (tti_action == SL_NR_CONFIG_TYPE_RX_PSBCH || tti_action == SL_NR_CONFIG_TYPE_RX_PSCCH || tti_action == SL_NR_CONFIG_TYPE_RX_PSSCH_SCI ||

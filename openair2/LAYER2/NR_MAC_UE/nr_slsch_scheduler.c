@@ -106,6 +106,18 @@ void handle_nr_ue_sl_harq(module_id_t mod_id,
   for (int i = 0; i < num_ack_rcvd; i++) {
     /* PHY PSFCH decode (nr_ue_decode_psfch0): 0 = ACK, 1 = NACK, -1 = DTX */
     int8_t harq_fb = (int8_t)rx_slsch_pdu->ack_nack_rcvd[i];
+#ifdef ENABLE_BLER_INSTRUMENTATION
+    /* Feedback-channel reliability: DTX rate is the hidden failure mode of
+     * HARQ analyses (lost PSFCH != NACK). Totals across all src_ids. */
+    {
+      static uint32_t psfch_fb_totals[3] = {0, 0, 0}; /* ack, nack, dtx */
+      psfch_fb_totals[harq_fb < 0 ? 2 : (harq_fb == 0 ? 0 : 1)]++;
+      uint32_t fb_total = psfch_fb_totals[0] + psfch_fb_totals[1] + psfch_fb_totals[2];
+      if (fb_total % 100 == 0)
+        LOG_I(NR_MAC, "[BLER_STATS] %u.%u PC5_PSFCH_RX_TOTALS ack=%u nack=%u dtx=%u total=%u\n",
+              frame, slot, psfch_fb_totals[0], psfch_fb_totals[1], psfch_fb_totals[2], fb_total);
+    }
+#endif
     if (harq_fb < 0)
       continue;
     uint8_t rx_harq_id = matched_harqs[i]->sl_harq_pid;

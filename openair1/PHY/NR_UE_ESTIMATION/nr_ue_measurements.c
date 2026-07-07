@@ -366,4 +366,8 @@ void nr_sl_psbch_rsrp_measurements(PHY_VARS_NR_UE *ue,
   LOG_D(PHY, "PSBCH RSRP (DMRS REs): numREs:%d RSRP :%d dB/RE ,RSRP:%d dBm/RE\n",
                               num_re, psbch_rx->rsrp_dB_per_RE, psbch_rx->rsrp_dBm_per_RE);
 
+#ifdef ENABLE_BLER_INSTRUMENTATION
+  LOG_I(PHY, "[BLER_STATS] PC5_PSBCH_RSRP rsrp_dB_per_RE=%d rsrp_dBm_per_RE=%d num_re=%d\n",
+        psbch_rx->rsrp_dB_per_RE, psbch_rx->rsrp_dBm_per_RE, num_re);
+#endif
 }

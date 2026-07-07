@@ -29,6 +29,8 @@ void srap_forward_sdu_drb(protocol_ctxt_t *const ctxt_pP,
     } else if (entity->type == NR_SRAP_UU) {
       enqueue_fwd_srap_uu_data_req(ctxt_pP, srb_flagP, rb_id, 0, 0, size, memblock);
     }
+    entity->stats.txpdu_pkts++;
+    entity->stats.txpdu_bytes += size;
   }
 }
 
@@ -49,6 +51,21 @@ void nr_srap_entity_recv_pdu(protocol_ctxt_t *const  ctxt_pP,
   AssertFatal(entity != NULL, "Entity is NULL!!!");
   entity->stats.rxpdu_pkts++;
   entity->stats.rxpdu_bytes += size;
+
+#ifdef ENABLE_BLER_INSTRUMENTATION
+  /* Relay-path packet accounting (Mode 1 U2N): per-entity Uu/PC5 forwarding
+   * counters for loss localization between the two hops. */
+  if (entity->stats.rxpdu_pkts % 100 == 0) {
+    LOG_I(NR_SRAP, "[BLER_STATS] SRAP_FWD_SUMMARY type=%s rxpdu=%u rxpdu_bytes=%u txpdu=%u txpdu_bytes=%u txsdu=%u txsdu_bytes=%u\n",
+          entity->type == NR_SRAP_UU ? "UU" : "PC5",
+          entity->stats.rxpdu_pkts,
+          entity->stats.rxpdu_bytes,
+          entity->stats.txpdu_pkts,
+          entity->stats.txpdu_bytes,
+          entity->stats.txsdu_pkts,
+          entity->stats.txsdu_bytes);
+  }
+#endif
 
   uint8_t relay_type = get_softmodem_params()->relay_type;
   uint8_t header_size;

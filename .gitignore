@@ -25,30 +25,16 @@ nfapi_nr_interface_scf
 __pycache__/
 *.pyc
 
-# BICTR / Monte Carlo generated outputs (do not push large CSVs and plots)
-bictr_analysis/montecarlo_parallel_builds/
-bictr_analysis/montecarlo_parallel_builds_lunar/
-bictr_analysis/montecarlo_results/
-bictr_analysis/montecarlo_results_rsl/
-bictr_analysis/results/
-bictr_analysis/merged_*/
-bictr_analysis/shards/
+# Local-only (keep on disk; do not push)
+/bictr_analysis/
+/bictr_terrain/
+/harq_bler_figs/
+/montecarlo_results/
+/old/
+/episci_sl_bler/
+/sl_verify_logs/
+/charts/physims/
 
-# BICTR terrain rasters (exceed GitHub file size limits; keep local copies only)
-bictr_terrain/*.JP2
-bictr_terrain/*.bdem
-bictr_terrain/.venv/
-bictr_analysis/montecarlo_results2/
-
-# Local Monte Carlo Docker files (repo root only; archived copies under old/ are tracked)
+# Local Monte Carlo Docker files (repo root only)
 /Dockerfile.montecarlo
 /scripts/
-
-# Entire BICTR analysis tree is local-only (scripts, results, plots)
-/bictr_analysis/
-
-# Local-only
-/bictr_terrain/
-/charts/physims/
-/harq_bler_figs/
-/sl_verify_logs/
